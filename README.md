@@ -10,6 +10,14 @@ The repository uses .NET SDK artifacts output, so builds write under `artifacts/
 dotnet build msbuild-graph-validation.slnx
 ```
 
+## Test fixtures
+
+Add MSBuild fixture projects under `tests/StaticGraphValidation.Tests/TestProjects/<case-name>/`. Tests in `GraphValidationFixtureTests` run MSBuild with a binlog, convert the dynamic capture, capture the static graph, and compare the graph projections.
+
+```bash
+dotnet test msbuild-graph-validation.slnx
+```
+
 ## Capture and compare
 
 The validation tool supports:

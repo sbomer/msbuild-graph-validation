@@ -1,0 +1,5 @@
+<Project DefaultTargets="Build">
+  <Target Name="Build">
+    <Message Importance="High" Text="Building single-project-no-references" />
+  </Target>
+</Project>
