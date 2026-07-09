@@ -6,13 +6,36 @@ namespace StaticGraphValidation.Tests;
 
 public sealed class GraphValidationFixtureTests
 {
+    private sealed record GraphCounts(int DynamicNodes, int DynamicEdges, int StaticNodes, int StaticEdges);
+
     [Fact]
     public async Task SingleProjectWithNoProjectReferencesMatchesStaticGraph()
     {
+        GraphCounts counts = await RunGraphValidationFixture(
+            "single-project-no-references",
+            "build.proj",
+            nameof(SingleProjectWithNoProjectReferencesMatchesStaticGraph));
+
+        Assert.Equal(new GraphCounts(1, 0, 1, 0), counts);
+    }
+
+    [Fact]
+    public async Task SingleProjectReferenceMatchesStaticGraph()
+    {
+        GraphCounts counts = await RunGraphValidationFixture(
+            "single-project-reference",
+            "root.proj",
+            nameof(SingleProjectReferenceMatchesStaticGraph));
+
+        Assert.Equal(new GraphCounts(2, 1, 2, 1), counts);
+    }
+
+    private static async Task<GraphCounts> RunGraphValidationFixture(string fixtureName, string entryProject, string testName)
+    {
         string repoRoot = FindRepoRoot();
-        string fixtureRoot = Path.Combine(repoRoot, "tests", "StaticGraphValidation.Tests", "TestProjects", "single-project-no-references");
-        string projectPath = Path.Combine(fixtureRoot, "build.proj");
-        string outputRoot = Path.Combine(repoRoot, "artifacts", "tmp", "tests", nameof(SingleProjectWithNoProjectReferencesMatchesStaticGraph));
+        string fixtureRoot = Path.Combine(repoRoot, "tests", "StaticGraphValidation.Tests", "TestProjects", fixtureName);
+        string projectPath = Path.Combine(fixtureRoot, entryProject);
+        string outputRoot = Path.Combine(repoRoot, "artifacts", "tmp", "tests", testName);
 
         if (Directory.Exists(outputRoot))
         {
@@ -46,11 +69,16 @@ public sealed class GraphValidationFixtureTests
         using JsonDocument dynamicCapture = JsonDocument.Parse(await File.ReadAllTextAsync(dynamicJson));
         using JsonDocument staticCapture = JsonDocument.Parse(await File.ReadAllTextAsync(staticJson));
 
-        Assert.Equal(1, dynamicCapture.RootElement.GetProperty("Nodes").GetArrayLength());
-        Assert.Equal(0, dynamicCapture.RootElement.GetProperty("Edges").GetArrayLength());
-        Assert.Equal(1, staticCapture.RootElement.GetProperty("Nodes").GetArrayLength());
-        Assert.Equal(0, staticCapture.RootElement.GetProperty("Edges").GetArrayLength());
+        return new GraphCounts(
+            NodeCount(dynamicCapture),
+            EdgeCount(dynamicCapture),
+            NodeCount(staticCapture),
+            EdgeCount(staticCapture));
     }
+
+    private static int NodeCount(JsonDocument capture) => capture.RootElement.GetProperty("Nodes").GetArrayLength();
+
+    private static int EdgeCount(JsonDocument capture) => capture.RootElement.GetProperty("Edges").GetArrayLength();
 
     private static string FindRepoRoot()
     {
