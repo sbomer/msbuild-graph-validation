@@ -1,0 +1,84 @@
+<Project>
+  <PropertyGroup>
+    <_StaticGraphSelectedTargetFrameworksBaseDir Condition="'$(ArtifactsObjDir)' != ''">$(ArtifactsObjDir)</_StaticGraphSelectedTargetFrameworksBaseDir>
+    <_StaticGraphSelectedTargetFrameworksBaseDir Condition="'$(_StaticGraphSelectedTargetFrameworksBaseDir)' == '' and '$(MSBuildProjectExtensionsPath)' != ''">$(MSBuildProjectExtensionsPath)</_StaticGraphSelectedTargetFrameworksBaseDir>
+    <_StaticGraphSelectedTargetFrameworksBaseDir Condition="'$(_StaticGraphSelectedTargetFrameworksBaseDir)' == '' and '$(BaseIntermediateOutputPath)' != ''">$(BaseIntermediateOutputPath)</_StaticGraphSelectedTargetFrameworksBaseDir>
+    <_StaticGraphSelectedTargetFrameworksBaseDir Condition="'$(_StaticGraphSelectedTargetFrameworksBaseDir)' == ''">$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', 'obj'))</_StaticGraphSelectedTargetFrameworksBaseDir>
+    <StaticGraphSelectedTargetFrameworksRawFile Condition="'$(StaticGraphSelectedTargetFrameworksRawFile)' == ''">$([MSBuild]::NormalizePath('$(_StaticGraphSelectedTargetFrameworksBaseDir)', 'static-graph', 'selected-target-frameworks.raw.txt'))</StaticGraphSelectedTargetFrameworksRawFile>
+    <StaticGraphSelectedTargetFrameworksTargets Condition="'$(StaticGraphSelectedTargetFrameworksTargets)' == ''">$([MSBuild]::NormalizePath('$(_StaticGraphSelectedTargetFrameworksBaseDir)', 'static-graph', 'selected-target-frameworks.targets'))</StaticGraphSelectedTargetFrameworksTargets>
+
+    <_StaticGraphTasksRepoRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..'))</_StaticGraphTasksRepoRoot>
+    <_StaticGraphTasksTargetFramework Condition="'$(StaticGraphTasksTargetFramework)' != ''">$(StaticGraphTasksTargetFramework)</_StaticGraphTasksTargetFramework>
+    <_StaticGraphTasksTargetFramework Condition="'$(_StaticGraphTasksTargetFramework)' == ''">net10.0</_StaticGraphTasksTargetFramework>
+    <_StaticGraphTasksConfiguration Condition="'$(TasksConfiguration)' != ''">$(TasksConfiguration)</_StaticGraphTasksConfiguration>
+    <_StaticGraphTasksConfiguration Condition="'$(_StaticGraphTasksConfiguration)' == '' and '$(Configuration)' != ''">$(Configuration)</_StaticGraphTasksConfiguration>
+    <_StaticGraphTasksConfiguration Condition="'$(_StaticGraphTasksConfiguration)' == ''">Debug</_StaticGraphTasksConfiguration>
+    <_StaticGraphTasksArtifactsOutputConfiguration>$([System.String]::Copy('$(_StaticGraphTasksConfiguration)').ToLowerInvariant())</_StaticGraphTasksArtifactsOutputConfiguration>
+    <StaticGraphTasksAssemblyPath Condition="'$(StaticGraphTasksAssemblyPath)' == ''">$([MSBuild]::NormalizePath('$(_StaticGraphTasksRepoRoot)', 'artifacts', 'bin', 'StaticGraphTasks', '$(_StaticGraphTasksArtifactsOutputConfiguration)', 'StaticGraphTasks.dll'))</StaticGraphTasksAssemblyPath>
+    <StaticGraphTasksAssemblyPath Condition="!Exists('$(StaticGraphTasksAssemblyPath)')">$([MSBuild]::NormalizePath('$(_StaticGraphTasksRepoRoot)', 'src', 'StaticGraphTasks', 'bin', '$(_StaticGraphTasksConfiguration)', '$(_StaticGraphTasksTargetFramework)', 'StaticGraphTasks.dll'))</StaticGraphTasksAssemblyPath>
+  </PropertyGroup>
+
+  <UsingTask TaskName="MSBuild.GraphValidation.Tasks.GenerateSelectedTargetFrameworks"
+             AssemblyFile="$(StaticGraphTasksAssemblyPath)"
+             Condition="Exists('$(StaticGraphTasksAssemblyPath)')" />
+
+  <Target Name="CaptureStaticGraphSelectedTargetFrameworks"
+          AfterTargets="ResolveP2PReferences"
+          Condition="'$(CaptureStaticGraphSelectedTargetFrameworks)' == 'true' and '$(StaticGraphSelectedTargetFrameworksRawFile)' != ''">
+    <ItemGroup>
+      <_StaticGraphSelectedTargetFramework Include="$(MSBuildProjectFullPath)"
+                                           Condition="'$(UsingMicrosoftTraversalSdk)' == 'true' and '$(FilterTraversalProjectReferences)' == 'true'">
+        <Line>$(MSBuildProjectFullPath)|||||||</Line>
+      </_StaticGraphSelectedTargetFramework>
+      <_StaticGraphSelectedTargetFramework Include="@(ProjectReference)">
+        <Line>$(MSBuildProjectFullPath)|%(ProjectReference.FullPath)|%(ProjectReference.NearestTargetFramework)|%(ProjectReference.SetTargetFramework)|%(ProjectReference.SetConfiguration)|%(ProjectReference.SetPlatform)|%(ProjectReference.UndefineProperties)|%(ProjectReference.SkipGetTargetFrameworkProperties)</Line>
+      </_StaticGraphSelectedTargetFramework>
+    </ItemGroup>
+
+    <WriteLinesToFile File="$(StaticGraphSelectedTargetFrameworksRawFile)"
+                      Lines="@(_StaticGraphSelectedTargetFramework->'%(Line)')"
+                      Overwrite="false" />
+  </Target>
+
+  <Target Name="_InitializeStaticGraphSelectedTargetFrameworksCapture"
+          Condition="'$(CaptureStaticGraphSelectedTargetFrameworks)' == 'true' and '$(_StaticGraphSelectedTargetFrameworksCaptureInitialized)' != 'true' and '$(StaticGraphSelectedTargetFrameworksRawFile)' != ''">
+    <MakeDir Directories="$([System.IO.Path]::GetDirectoryName('$(StaticGraphSelectedTargetFrameworksRawFile)'))" />
+    <Delete Files="$(StaticGraphSelectedTargetFrameworksRawFile)" />
+  </Target>
+
+  <Target Name="CaptureStaticGraphSelectedTargetFrameworksRecursive"
+          DependsOnTargets="_InitializeStaticGraphSelectedTargetFrameworksCapture;_CaptureStaticGraphSelectedTargetFrameworksRecursiveOuterBuild;_CaptureStaticGraphSelectedTargetFrameworksRecursiveInnerBuild" />
+
+  <Target Name="_CaptureStaticGraphSelectedTargetFrameworksRecursiveOuterBuild"
+          Condition="'$(IsCrossTargetingBuild)' == 'true'">
+    <ItemGroup>
+      <_StaticGraphInnerTargetFramework Include="$(TargetFrameworks)" />
+    </ItemGroup>
+
+    <MSBuild Projects="$(MSBuildProjectFullPath)"
+             Targets="CaptureStaticGraphSelectedTargetFrameworksRecursive"
+             Properties="TargetFramework=%(_StaticGraphInnerTargetFramework.Identity);CaptureStaticGraphSelectedTargetFrameworks=true;StaticGraphSelectedTargetFrameworksRawFile=$(StaticGraphSelectedTargetFrameworksRawFile);_StaticGraphSelectedTargetFrameworksCaptureInitialized=true"
+             RemoveProperties="TargetFrameworks"
+             BuildInParallel="false"
+             SkipNonexistentTargets="true" />
+  </Target>
+
+  <Target Name="_CaptureStaticGraphSelectedTargetFrameworksRecursiveInnerBuild"
+          DependsOnTargets="PrepareProjectReferences;CaptureStaticGraphSelectedTargetFrameworks"
+          Condition="'$(IsCrossTargetingBuild)' != 'true'">
+    <MSBuild Projects="@(_MSBuildProjectReferenceExistent)"
+             Targets="CaptureStaticGraphSelectedTargetFrameworksRecursive"
+             Properties="%(_MSBuildProjectReferenceExistent.SetTargetFramework);%(_MSBuildProjectReferenceExistent.SetConfiguration);%(_MSBuildProjectReferenceExistent.SetPlatform);CaptureStaticGraphSelectedTargetFrameworks=true;StaticGraphSelectedTargetFrameworksRawFile=$(StaticGraphSelectedTargetFrameworksRawFile);_StaticGraphSelectedTargetFrameworksCaptureInitialized=true"
+             RemoveProperties="%(_MSBuildProjectReferenceExistent.GlobalPropertiesToRemove);%(_MSBuildProjectReferenceExistent.UndefineProperties)"
+             BuildInParallel="false"
+             SkipNonexistentTargets="true" />
+  </Target>
+
+  <Target Name="GenerateStaticGraphSelectedTargetFrameworks"
+          Condition="'$(StaticGraphSelectedTargetFrameworksRawFile)' != '' and '$(StaticGraphSelectedTargetFrameworksTargets)' != ''">
+    <Error Text="Static graph tasks assembly was not found at '$(StaticGraphTasksAssemblyPath)'. Build StaticGraphTasks first or pass /p:StaticGraphTasksAssemblyPath=/path/to/StaticGraphTasks.dll."
+           Condition="!Exists('$(StaticGraphTasksAssemblyPath)')" />
+    <MSBuild.GraphValidation.Tasks.GenerateSelectedTargetFrameworks RawSelectionFile="$(StaticGraphSelectedTargetFrameworksRawFile)"
+                                                                   OutputFile="$(StaticGraphSelectedTargetFrameworksTargets)" />
+  </Target>
+</Project>
