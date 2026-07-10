@@ -94,6 +94,19 @@ public sealed class GraphValidationFixtureTests
     }
 
     [Fact]
+    public async Task DynamicProjectReferenceAdditionalPropertiesAreNotVisibleToGraphBuild()
+    {
+        string output = await RunIsolatedGraphBuildExpectingFailure(
+            "dynamic-project-reference-additional-properties",
+            "root.proj",
+            nameof(DynamicProjectReferenceAdditionalPropertiesAreNotVisibleToGraphBuild));
+
+        Assert.Contains("MSB4252", output);
+        Assert.Contains("DynamicProperty=from-target", output);
+        Assert.Contains("build result for the built project is not in the engine cache", output);
+    }
+
+    [Fact]
     public async Task SingleProjectReferenceMatchesStaticGraph()
     {
         GraphCounts counts = await RunGraphValidationFixture(
@@ -168,6 +181,31 @@ public sealed class GraphValidationFixtureTests
         await Run(repoRoot, "dotnet", ["run", "--no-build", "--project", Path.Combine(repoRoot, "src", "StaticGraphValidation"), "--", "compare", "--left", dynamicJson, "--right", graphBuildJson, "-o", comparisonText], expectedComparisonExitCode);
 
         return (dynamicJson, graphBuildJson, comparisonText);
+    }
+
+    private static async Task<string> RunIsolatedGraphBuildExpectingFailure(
+        string fixtureName,
+        string entryProject,
+        string testName)
+    {
+        string repoRoot = FindRepoRoot();
+        string fixtureRoot = Path.Combine(repoRoot, "tests", "StaticGraphValidation.Tests", "TestProjects", fixtureName);
+        string projectPath = Path.Combine(fixtureRoot, entryProject);
+        string outputRoot = Path.Combine(repoRoot, "artifacts", "tmp", "tests", testName);
+
+        if (Directory.Exists(outputRoot))
+        {
+            Directory.Delete(outputRoot, recursive: true);
+        }
+
+        Directory.CreateDirectory(outputRoot);
+
+        string graphBuildBinlog = Path.Combine(outputRoot, "graph-build.binlog");
+        return await Run(
+            repoRoot,
+            "dotnet",
+            ["msbuild", projectPath, "/graphBuild", "/isolateProjects", $"/bl:{graphBuildBinlog}", "/nologo", "/v:minimal"],
+            expectedExitCode: 1);
     }
 
     private static async Task<(string DynamicJson, string StaticJson, string ComparisonText)> RunGraphValidationFixture(
@@ -250,6 +288,19 @@ public sealed class GraphValidationFixtureTests
             .ToArray();
     }
 
+    private static string? GlobalProperty(string capturePath, string relativePath, string propertyName)
+    {
+        using JsonDocument capture = JsonDocument.Parse(File.ReadAllText(capturePath));
+        JsonElement node = capture.RootElement
+            .GetProperty("Nodes")
+            .EnumerateArray()
+            .Single(node => node.GetProperty("RelativePath").GetString() == relativePath);
+
+        return node.GetProperty("GlobalProperties").TryGetProperty(propertyName, out JsonElement property)
+            ? property.GetString()
+            : null;
+    }
+
     private static string TargetList(params string[] targets) => string.Join(';', targets);
 
     private static string FindRepoRoot()
@@ -265,7 +316,7 @@ public sealed class GraphValidationFixtureTests
         throw new InvalidOperationException("Could not find repository root.");
     }
 
-    private static async Task Run(string workingDirectory, string fileName, IReadOnlyList<string> arguments, int expectedExitCode = 0)
+    private static async Task<string> Run(string workingDirectory, string fileName, IReadOnlyList<string> arguments, int expectedExitCode = 0)
     {
         ProcessStartInfo startInfo = new()
         {
@@ -296,5 +347,7 @@ public sealed class GraphValidationFixtureTests
             stderr:
             {standardError}
             """);
+
+        return standardOutput + standardError;
     }
 }

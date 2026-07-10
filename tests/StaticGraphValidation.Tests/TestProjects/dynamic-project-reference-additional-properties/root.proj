@@ -1,0 +1,18 @@
+<Project DefaultTargets="Build">
+  <ItemGroup>
+    <ProjectReference Include="referenced.proj" />
+  </ItemGroup>
+
+  <Target Name="SetReferenceProperties">
+    <ItemGroup>
+      <ProjectReference Update="@(ProjectReference)"
+                        AdditionalProperties="%(ProjectReference.AdditionalProperties);DynamicProperty=from-target" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="Build"
+          DependsOnTargets="SetReferenceProperties">
+    <Message Importance="High" Text="Building root" />
+    <MSBuild Projects="@(ProjectReference)" />
+  </Target>
+</Project>
