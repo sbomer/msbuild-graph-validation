@@ -1,0 +1,9 @@
+<Project>
+  <Target Name="TargetA">
+    <Message Importance="High" Text="TargetA" />
+  </Target>
+
+  <Target Name="TargetB">
+    <Message Importance="High" Text="TargetB" />
+  </Target>
+</Project>

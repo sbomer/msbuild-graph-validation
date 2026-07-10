@@ -107,6 +107,24 @@ public sealed class GraphValidationFixtureTests
     }
 
     [Fact]
+    public async Task SeparateDynamicTargetInvocationsDifferFromBatchedGraphTargets()
+    {
+        (string dynamicJson, string graphBuildJson, string comparisonText) = await RunGraphBuildBinlogComparison(
+            "target-batching-difference",
+            "root.proj",
+            nameof(SeparateDynamicTargetInvocationsDifferFromBatchedGraphTargets),
+            isolateProjects: true,
+            expectedComparisonExitCode: 2);
+
+        string comparison = await File.ReadAllTextAsync(comparisonText);
+        Assert.Contains("Left-only nodes: 0", comparison);
+        Assert.Contains("Right-only nodes: 1", comparison);
+
+        Assert.Equal([TargetList("TargetA"), TargetList("TargetB")], RequestedTargetLists(dynamicJson, "referenced.proj"));
+        Assert.Equal([TargetList("TargetA"), TargetList("TargetA", "TargetB"), TargetList("TargetB")], RequestedTargetLists(graphBuildJson, "referenced.proj"));
+    }
+
+    [Fact]
     public async Task SingleProjectReferenceMatchesStaticGraph()
     {
         GraphCounts counts = await RunGraphValidationFixture(

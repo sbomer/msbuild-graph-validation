@@ -1,0 +1,11 @@
+<Project DefaultTargets="Build">
+  <ItemGroup>
+    <ProjectReference Include="referenced.proj" />
+    <ProjectReferenceTargets Include="Build" Targets="TargetA;TargetB" />
+  </ItemGroup>
+
+  <Target Name="Build">
+    <MSBuild Projects="@(ProjectReference)" Targets="TargetA" />
+    <MSBuild Projects="@(ProjectReference)" Targets="TargetB" />
+  </Target>
+</Project>
