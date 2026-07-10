@@ -5,39 +5,51 @@ internal static class NormalizedCaptureWriter
         Directory.CreateDirectory(outputDirectory);
 
         Dictionary<string, GraphNode> nodesById = Normalization.NodesById(capture);
-        WriteProjection(capture, nodesById, outputDirectory, "query-strict", ComparisonProjection.QueryStrict, Normalization.IsQueryOnlyNode, EdgeClass.Query);
-        WriteProjection(capture, nodesById, outputDirectory, "full-presence", ComparisonProjection.FullPresence, static node => true, EdgeClass.All);
-        WriteProjection(capture, nodesById, outputDirectory, "build-presence", ComparisonProjection.BuildPresence, static node => !Normalization.IsQueryOnlyNode(node), EdgeClass.Build);
-        WriteProjection(capture, nodesById, outputDirectory, "build-strict", ComparisonProjection.BuildStrict, static node => !Normalization.IsQueryOnlyNode(node), EdgeClass.Build);
+        WriteGraph(capture, nodesById, outputDirectory);
     }
 
-    private static void WriteProjection(
-        GraphCapture capture,
-        Dictionary<string, GraphNode> nodesById,
-        string outputDirectory,
-        string name,
-        ComparisonProjection projection,
-        Func<GraphNode, bool> nodePredicate,
-        EdgeClass edgeClass)
+    private static void WriteGraph(GraphCapture capture, Dictionary<string, GraphNode> nodesById, string outputDirectory)
     {
-        HashSet<NormalizedNode> nodes = Normalization.ProjectNodes(capture.Nodes.Where(nodePredicate), projection);
-        HashSet<NormalizedEdge> edges = Normalization.ProjectEdges(capture.Edges, nodesById, projection, edgeClass);
-        File.WriteAllLines(Path.Combine(outputDirectory, $"{name}.nodes.txt"), nodes.Select(NodeLine).OrderBy(static line => line, StringComparer.OrdinalIgnoreCase));
-        File.WriteAllLines(Path.Combine(outputDirectory, $"{name}.edges.txt"), edges.Select(EdgeLine).OrderBy(static line => line, StringComparer.OrdinalIgnoreCase));
+        HashSet<NormalizedNode> nodes = Normalization.ProjectNodes(capture.Nodes);
+        HashSet<NormalizedEdge> edges = Normalization.ProjectEdges(capture.Edges, nodesById);
+        File.WriteAllLines(Path.Combine(outputDirectory, "nodes.txt"), NodeLines(nodes));
+        File.WriteAllLines(Path.Combine(outputDirectory, "edges.txt"), edges.Select(EdgeLine).OrderBy(static line => line, StringComparer.OrdinalIgnoreCase));
     }
 
-    private static string NodeLine(NormalizedNode node) =>
+    private static string EdgeLine(NormalizedEdge edge) =>
         string.Join('|',
-            $"Role={Escape(node.Role)}",
+            $"From={Escape(FlatNodeLine(edge.From))}",
+            $"To={Escape(FlatNodeLine(edge.To))}");
+
+    private static string FlatNodeLine(NormalizedNode node) =>
+        string.Join('|',
             $"Project={Escape(node.ProjectPath)}",
             $"Targets={Escape(string.Join(';', node.EffectiveTargets))}",
             $"GlobalProperties={Escape(string.Join(';', node.GlobalProperties.Select(static pair => $"{pair.Key}={pair.Value}")))}");
 
-    private static string EdgeLine(NormalizedEdge edge) =>
-        string.Join('|',
-            $"Role={Escape(edge.Role)}",
-            $"From={Escape(NodeLine(edge.From))}",
-            $"To={Escape(NodeLine(edge.To))}");
+    private static IEnumerable<string> NodeLines(IEnumerable<NormalizedNode> nodes)
+    {
+        foreach (IGrouping<string, NormalizedNode> projectGroup in nodes
+            .GroupBy(static node => node.ProjectPath)
+            .OrderBy(static group => group.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            yield return $"Project: {Escape(projectGroup.Key)}";
+
+            foreach (IGrouping<string, NormalizedNode> targetGroup in projectGroup
+                .GroupBy(static node => string.Join(';', node.EffectiveTargets))
+                .OrderBy(static group => group.Key, StringComparer.OrdinalIgnoreCase))
+            {
+                yield return $"  Targets: {Escape(targetGroup.Key)}";
+
+                foreach (string properties in targetGroup
+                    .Select(static node => string.Join(';', node.GlobalProperties.Select(static pair => $"{pair.Key}={pair.Value}")))
+                    .OrderBy(static line => line, StringComparer.OrdinalIgnoreCase))
+                {
+                    yield return $"    Globals: {Escape(properties)}";
+                }
+            }
+        }
+    }
 
     private static string Escape(string value) =>
         value.Replace("\\", "\\\\", StringComparison.Ordinal)

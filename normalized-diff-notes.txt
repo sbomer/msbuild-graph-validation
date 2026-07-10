@@ -22,6 +22,30 @@ Inputs
    dotnet run --project src/StaticGraphValidation -- \
      compare --left <left.json> --right <right.json>
 
+For a stable textual representation suitable for `diff -u`, normalize each
+capture to a directory:
+
+   dotnet run --project src/StaticGraphValidation -- \
+     normalize <left.json> --output-dir left-normalized
+
+   dotnet run --project src/StaticGraphValidation -- \
+     normalize <right.json> --output-dir right-normalized
+
+The primary files are:
+
+  nodes.txt
+  edges.txt
+
+`nodes.txt` renders normalized nodes as:
+
+  Project: ...
+    Targets: ...
+      Globals: ...
+
+`edges.txt` renders one sorted canonical line per normalized edge:
+
+  From=Project=...|...|To=Project=...|...
+
 Node normalization
 ------------------
 
@@ -34,7 +58,6 @@ Each GraphNode is normalized to a structured identity:
   ProjectPath
   EffectiveTargets
   GlobalProperties
-  Role
 
 ProjectPath:
 
@@ -66,19 +89,6 @@ GlobalProperties:
   RuntimeIdentifier, Platform, FileVersion, and PackageTargetRuntime participate
   because they remain in the normalized global-property dictionary.
 
-Role:
-
-  Query:<requested target list>
-
-    when all requested targets are query-only targets:
-
-      GetTargetFrameworks
-      GetTargetFrameworksWithPlatformForSingleTargetFramework
-
-  Build
-
-    for all other nodes.
-
 Equality
 --------
 
@@ -87,13 +97,11 @@ NormalizedNode equality compares:
   - ProjectPath, case-insensitive
   - EffectiveTargets sequence, case-insensitive
   - GlobalProperties dictionary, case-insensitive keys and values
-  - Role, case-insensitive
 
 NormalizedEdge equality compares:
 
   - normalized From node
   - normalized To node
-  - edge role: Query or Build
 
 Current CLR comparison command
 ------------------------------

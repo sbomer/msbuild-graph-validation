@@ -1,48 +1,28 @@
 internal static class Normalization
 {
-    private static readonly StringComparer s_comparer = StringComparer.OrdinalIgnoreCase;
-    private static readonly HashSet<string> s_queryTargets = new(s_comparer)
-    {
-        "GetTargetFrameworks",
-        "GetTargetFrameworksWithPlatformForSingleTargetFramework"
-    };
-
     public static Dictionary<string, GraphNode> NodesById(GraphCapture capture) =>
         capture.Nodes.ToDictionary(static node => node.Id, static node => node, StringComparer.Ordinal);
 
-    public static HashSet<NormalizedNode> ProjectNodes(IEnumerable<GraphNode> nodes, ComparisonProjection projection)
+    public static HashSet<NormalizedNode> ProjectNodes(IEnumerable<GraphNode> nodes)
     {
         HashSet<NormalizedNode> normalizedNodes = new(NormalizedNodeComparer.Instance);
         foreach (GraphNode node in nodes)
         {
-            normalizedNodes.Add(Project(ToCanonicalNode(node), projection));
+            normalizedNodes.Add(ToNormalizedNode(node));
         }
 
         return normalizedNodes;
     }
 
-    public static CanonicalNode ToCanonicalNode(GraphNode node)
-    {
-        string projectPath = Path.GetFullPath(node.ProjectPath).Replace('\\', '/');
-        string role = IsQueryOnlyNode(node) ? $"Query:{string.Join(";", node.RequestedTargets)}" : "Build";
-        return new CanonicalNode(
-            projectPath,
-            role,
+    public static NormalizedNode ToNormalizedNode(GraphNode node) =>
+        new(
+            Path.GetFullPath(node.ProjectPath).Replace('\\', '/'),
             EffectiveRequestedTargets(node),
             NormalizedGlobalProperties(node));
-    }
-
-    public static NormalizedNode Project(CanonicalNode node, ComparisonProjection projection)
-    {
-        string role = projection == ComparisonProjection.FullPresence ? node.Role.Split(':')[0] : node.Role;
-        return new NormalizedNode(node.ProjectPath, node.EffectiveTargets, node.GlobalProperties, role);
-    }
 
     public static HashSet<NormalizedEdge> ProjectEdges(
         IEnumerable<GraphEdge> edges,
-        Dictionary<string, GraphNode> nodesById,
-        ComparisonProjection projection,
-        EdgeClass edgeClass)
+        Dictionary<string, GraphNode> nodesById)
     {
         HashSet<NormalizedEdge> normalizedEdges = new(NormalizedEdgeComparer.Instance);
         foreach (GraphEdge edge in edges)
@@ -53,34 +33,10 @@ internal static class Normalization
                 continue;
             }
 
-            bool isQueryEdge = IsQueryOnlyNode(to);
-            if (edgeClass == EdgeClass.Query && !isQueryEdge)
-            {
-                continue;
-            }
-
-            if (edgeClass == EdgeClass.Build && isQueryEdge)
-            {
-                continue;
-            }
-
-            NormalizedNode normalizedFrom = Project(ToCanonicalNode(from), projection);
-            NormalizedNode normalizedTo = Project(ToCanonicalNode(to), projection);
-            string role = isQueryEdge ? "Query" : "Build";
-            normalizedEdges.Add(new NormalizedEdge(normalizedFrom, normalizedTo, role));
+            normalizedEdges.Add(new NormalizedEdge(ToNormalizedNode(from), ToNormalizedNode(to)));
         }
 
         return normalizedEdges;
-    }
-
-    public static bool IsQueryOnlyNode(GraphNode node)
-    {
-        if (node.RequestedTargets.Count == 0)
-        {
-            return false;
-        }
-
-        return node.RequestedTargets.All(s_queryTargets.Contains);
     }
 
     private static IReadOnlyList<string> EffectiveRequestedTargets(GraphNode node) =>
@@ -93,34 +49,10 @@ internal static class Normalization
             .ToDictionary(static pair => pair.Key, static pair => pair.Value, StringComparer.OrdinalIgnoreCase);
 }
 
-internal enum ComparisonProjection
-{
-    FullPresence,
-    QueryStrict,
-    BuildPresence,
-    BuildStrict
-}
-
-internal enum EdgeClass
-{
-    All,
-    Query,
-    Build
-}
-
-internal sealed record CanonicalNode(
-    string ProjectPath,
-    string Role,
-    IReadOnlyList<string> EffectiveTargets,
-    IReadOnlyDictionary<string, string> GlobalProperties);
-
-internal sealed record CanonicalEdge(CanonicalNode From, CanonicalNode To, string Role);
-
 internal sealed record NormalizedNode(
     string ProjectPath,
     IReadOnlyList<string> EffectiveTargets,
-    IReadOnlyDictionary<string, string> GlobalProperties,
-    string Role)
+    IReadOnlyDictionary<string, string> GlobalProperties)
 {
     public string DisplayName => ToIdentityString();
 
@@ -128,9 +60,9 @@ internal sealed record NormalizedNode(
         $"{ProjectPath}|targets={string.Join(';', EffectiveTargets)}|globals={string.Join(';', GlobalProperties.Select(static pair => $"{pair.Key}={pair.Value}"))}";
 }
 
-internal sealed record NormalizedEdge(NormalizedNode From, NormalizedNode To, string Role)
+internal sealed record NormalizedEdge(NormalizedNode From, NormalizedNode To)
 {
-    public string DisplayName => $"{From.DisplayName} -> {To.DisplayName} [{Role}]";
+    public string DisplayName => $"{From.DisplayName} -> {To.DisplayName}";
 }
 
 internal sealed class NormalizedNodeComparer : IEqualityComparer<NormalizedNode>
@@ -142,15 +74,13 @@ internal sealed class NormalizedNodeComparer : IEqualityComparer<NormalizedNode>
         y is not null &&
         StringComparer.OrdinalIgnoreCase.Equals(x.ProjectPath, y.ProjectPath) &&
         x.EffectiveTargets.SequenceEqual(y.EffectiveTargets, StringComparer.OrdinalIgnoreCase) &&
-        DictionaryEquals(x.GlobalProperties, y.GlobalProperties) &&
-        StringComparer.OrdinalIgnoreCase.Equals(x.Role, y.Role);
+        DictionaryEquals(x.GlobalProperties, y.GlobalProperties);
 
     public int GetHashCode(NormalizedNode obj) =>
         HashCode.Combine(
             StringComparer.OrdinalIgnoreCase.GetHashCode(obj.ProjectPath),
             SequenceHashCode(obj.EffectiveTargets),
-            DictionaryHashCode(obj.GlobalProperties),
-            StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Role));
+            DictionaryHashCode(obj.GlobalProperties));
 
     private static bool DictionaryEquals(IReadOnlyDictionary<string, string> left, IReadOnlyDictionary<string, string> right)
     {
@@ -203,12 +133,10 @@ internal sealed class NormalizedEdgeComparer : IEqualityComparer<NormalizedEdge>
         x is not null &&
         y is not null &&
         NormalizedNodeComparer.Instance.Equals(x.From, y.From) &&
-        NormalizedNodeComparer.Instance.Equals(x.To, y.To) &&
-        StringComparer.OrdinalIgnoreCase.Equals(x.Role, y.Role);
+        NormalizedNodeComparer.Instance.Equals(x.To, y.To);
 
     public int GetHashCode(NormalizedEdge obj) =>
         HashCode.Combine(
             NormalizedNodeComparer.Instance.GetHashCode(obj.From),
-            NormalizedNodeComparer.Instance.GetHashCode(obj.To),
-            StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Role));
+            NormalizedNodeComparer.Instance.GetHashCode(obj.To));
 }

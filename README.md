@@ -34,6 +34,15 @@ Or compare binlogs directly:
 dotnet run --project src/StaticGraphValidation -- compare-binlogs --left path/to/left.binlog --right path/to/right.binlog --repo-root path/to/repo -o artifacts/log/static-graph-validation/comparison.txt
 ```
 
+To produce stable text files for `diff -u`, normalize each capture to a directory:
+
+```bash
+dotnet run --project src/StaticGraphValidation -- normalize artifacts/log/static-graph-validation/left.json --output-dir artifacts/log/static-graph-validation/left
+dotnet run --project src/StaticGraphValidation -- normalize artifacts/log/static-graph-validation/right.json --output-dir artifacts/log/static-graph-validation/right
+diff -u artifacts/log/static-graph-validation/left/nodes.txt artifacts/log/static-graph-validation/right/nodes.txt
+diff -u artifacts/log/static-graph-validation/left/edges.txt artifacts/log/static-graph-validation/right/edges.txt
+```
+
 ## Static graph capture
 
 ```bash

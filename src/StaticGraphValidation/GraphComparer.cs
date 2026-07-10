@@ -7,10 +7,10 @@ internal static class GraphComparer
         Dictionary<string, GraphNode> leftNodesById = Normalization.NodesById(left);
         Dictionary<string, GraphNode> rightNodesById = Normalization.NodesById(right);
 
-        HashSet<NormalizedNode> leftNodes = Normalization.ProjectNodes(left.Nodes, ComparisonProjection.BuildPresence);
-        HashSet<NormalizedNode> rightNodes = Normalization.ProjectNodes(right.Nodes, ComparisonProjection.BuildPresence);
-        HashSet<NormalizedEdge> leftEdges = Normalization.ProjectEdges(left.Edges, leftNodesById, ComparisonProjection.BuildPresence, EdgeClass.All);
-        HashSet<NormalizedEdge> rightEdges = Normalization.ProjectEdges(right.Edges, rightNodesById, ComparisonProjection.BuildPresence, EdgeClass.All);
+        HashSet<NormalizedNode> leftNodes = Normalization.ProjectNodes(left.Nodes);
+        HashSet<NormalizedNode> rightNodes = Normalization.ProjectNodes(right.Nodes);
+        HashSet<NormalizedEdge> leftEdges = Normalization.ProjectEdges(left.Edges, leftNodesById);
+        HashSet<NormalizedEdge> rightEdges = Normalization.ProjectEdges(right.Edges, rightNodesById);
 
         return new GraphComparison
         {
@@ -34,14 +34,12 @@ internal static class GraphComparer
             .OrderBy(static node => node.ProjectPath, s_comparer)
             .ThenBy(static node => string.Join(';', node.EffectiveTargets), s_comparer)
             .ThenBy(static node => string.Join(';', node.GlobalProperties.Select(static pair => $"{pair.Key}={pair.Value}")), s_comparer)
-            .ThenBy(static node => node.Role, s_comparer)
             .ToList();
 
     private static List<NormalizedEdge> Except(HashSet<NormalizedEdge> left, HashSet<NormalizedEdge> right) =>
         left.Except(right, NormalizedEdgeComparer.Instance)
             .OrderBy(static edge => edge.From.ProjectPath, s_comparer)
             .ThenBy(static edge => edge.To.ProjectPath, s_comparer)
-            .ThenBy(static edge => edge.Role, s_comparer)
             .ThenBy(static edge => string.Join(';', edge.From.EffectiveTargets), s_comparer)
             .ThenBy(static edge => string.Join(';', edge.To.EffectiveTargets), s_comparer)
             .ThenBy(static edge => string.Join(';', edge.From.GlobalProperties.Select(static pair => $"{pair.Key}={pair.Value}")), s_comparer)

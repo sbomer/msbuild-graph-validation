@@ -19,7 +19,7 @@ internal static class GraphComparisonReportWriter
         writer.WriteLine($"  right edges: {comparison.RightNormalizedEdgeCount}");
         writer.WriteLine();
         writer.WriteLine("Normalization:");
-        writer.WriteLine("  Node identity: project path + effective targets + global properties + role");
+        writer.WriteLine("  Node identity: project path + effective targets + global properties");
         writer.WriteLine("  Effective targets: requested targets, otherwise resolved default targets");
         writer.WriteLine("  Ignored global properties: IsGraphBuild");
         writer.WriteLine();
