@@ -19,8 +19,8 @@ internal static class GraphComparisonReportWriter
         writer.WriteLine($"  right edges: {comparison.RightNormalizedEdgeCount}");
         writer.WriteLine();
         writer.WriteLine("Normalization:");
-        writer.WriteLine("  Node identity: project path + effective targets + global properties");
-        writer.WriteLine("  Effective targets: requested targets, otherwise resolved default targets");
+        writer.WriteLine("  Node identity: project path + individual effective target + global properties");
+        writer.WriteLine("  Effective targets: requested targets, otherwise resolved default targets; multi-target requests are split");
         writer.WriteLine("  Ignored global properties: IsGraphBuild");
         writer.WriteLine();
         WriteSection(writer, "Left-only nodes", comparison.LeftOnlyNodes);

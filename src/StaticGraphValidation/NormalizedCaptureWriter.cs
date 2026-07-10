@@ -24,7 +24,7 @@ internal static class NormalizedCaptureWriter
     private static string FlatNodeLine(NormalizedNode node) =>
         string.Join('|',
             $"Project={Escape(node.ProjectPath)}",
-            $"Targets={Escape(string.Join(';', node.EffectiveTargets))}",
+            $"Target={Escape(node.Target)}",
             $"GlobalProperties={Escape(string.Join(';', node.GlobalProperties.Select(static pair => $"{pair.Key}={pair.Value}")))}");
 
     private static IEnumerable<string> NodeLines(IEnumerable<NormalizedNode> nodes)
@@ -36,10 +36,10 @@ internal static class NormalizedCaptureWriter
             yield return $"Project: {Escape(projectGroup.Key)}";
 
             foreach (IGrouping<string, NormalizedNode> targetGroup in projectGroup
-                .GroupBy(static node => string.Join(';', node.EffectiveTargets))
+                .GroupBy(static node => node.Target)
                 .OrderBy(static group => group.Key, StringComparer.OrdinalIgnoreCase))
             {
-                yield return $"  Targets: {Escape(targetGroup.Key)}";
+                yield return $"  Target: {Escape(targetGroup.Key)}";
 
                 foreach (string properties in targetGroup
                     .Select(static node => string.Join(';', node.GlobalProperties.Select(static pair => $"{pair.Key}={pair.Value}")))

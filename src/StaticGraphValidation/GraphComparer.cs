@@ -32,7 +32,7 @@ internal static class GraphComparer
     private static List<NormalizedNode> Except(HashSet<NormalizedNode> left, HashSet<NormalizedNode> right) =>
         left.Except(right, NormalizedNodeComparer.Instance)
             .OrderBy(static node => node.ProjectPath, s_comparer)
-            .ThenBy(static node => string.Join(';', node.EffectiveTargets), s_comparer)
+            .ThenBy(static node => node.Target, s_comparer)
             .ThenBy(static node => string.Join(';', node.GlobalProperties.Select(static pair => $"{pair.Key}={pair.Value}")), s_comparer)
             .ToList();
 
@@ -40,8 +40,8 @@ internal static class GraphComparer
         left.Except(right, NormalizedEdgeComparer.Instance)
             .OrderBy(static edge => edge.From.ProjectPath, s_comparer)
             .ThenBy(static edge => edge.To.ProjectPath, s_comparer)
-            .ThenBy(static edge => string.Join(';', edge.From.EffectiveTargets), s_comparer)
-            .ThenBy(static edge => string.Join(';', edge.To.EffectiveTargets), s_comparer)
+            .ThenBy(static edge => edge.From.Target, s_comparer)
+            .ThenBy(static edge => edge.To.Target, s_comparer)
             .ThenBy(static edge => string.Join(';', edge.From.GlobalProperties.Select(static pair => $"{pair.Key}={pair.Value}")), s_comparer)
             .ThenBy(static edge => string.Join(';', edge.To.GlobalProperties.Select(static pair => $"{pair.Key}={pair.Value}")), s_comparer)
             .ToList();

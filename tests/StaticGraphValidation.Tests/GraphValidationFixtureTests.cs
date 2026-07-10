@@ -114,11 +114,11 @@ public sealed class GraphValidationFixtureTests
             "root.proj",
             nameof(SeparateDynamicTargetInvocationsDifferFromBatchedGraphTargets),
             isolateProjects: true,
-            expectedComparisonExitCode: 2);
+            expectedComparisonExitCode: 0);
 
         string comparison = await File.ReadAllTextAsync(comparisonText);
         Assert.Contains("Left-only nodes: 0", comparison);
-        Assert.Contains("Right-only nodes: 1", comparison);
+        Assert.Contains("Right-only nodes: 0", comparison);
 
         Assert.Equal([TargetList("TargetA"), TargetList("TargetB")], RequestedTargetLists(dynamicJson, "referenced.proj"));
         Assert.Equal([TargetList("TargetA"), TargetList("TargetA", "TargetB"), TargetList("TargetB")], RequestedTargetLists(graphBuildJson, "referenced.proj"));

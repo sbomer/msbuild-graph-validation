@@ -8,17 +8,34 @@ internal static class Normalization
         HashSet<NormalizedNode> normalizedNodes = new(NormalizedNodeComparer.Instance);
         foreach (GraphNode node in nodes)
         {
-            normalizedNodes.Add(ToNormalizedNode(node));
+            foreach (NormalizedNode normalizedNode in ToNormalizedNodes(node))
+            {
+                normalizedNodes.Add(normalizedNode);
+            }
         }
 
         return normalizedNodes;
     }
 
-    public static NormalizedNode ToNormalizedNode(GraphNode node) =>
-        new(
-            Path.GetFullPath(node.ProjectPath).Replace('\\', '/'),
-            EffectiveRequestedTargets(node),
-            NormalizedGlobalProperties(node));
+    public static IReadOnlyList<NormalizedNode> ToNormalizedNodes(GraphNode node)
+    {
+        string projectPath = Path.GetFullPath(node.ProjectPath).Replace('\\', '/');
+        IReadOnlyDictionary<string, string> globalProperties = NormalizedGlobalProperties(node);
+
+        // Normalize target identity by target result rather than by requested-target batch.
+        // Graph builds may schedule A;B together while dynamic builds request A and B
+        // separately. Target results are what downstream MSBuild tasks consume, so split
+        // multi-target requests into one normalized node per effective target.
+        IReadOnlyList<string> targets = EffectiveRequestedTargets(node);
+        if (targets.Count == 0)
+        {
+            return [new NormalizedNode(projectPath, "", globalProperties)];
+        }
+
+        return targets
+            .Select(target => new NormalizedNode(projectPath, target, globalProperties))
+            .ToArray();
+    }
 
     public static HashSet<NormalizedEdge> ProjectEdges(
         IEnumerable<GraphEdge> edges,
@@ -33,7 +50,13 @@ internal static class Normalization
                 continue;
             }
 
-            normalizedEdges.Add(new NormalizedEdge(ToNormalizedNode(from), ToNormalizedNode(to)));
+            foreach (NormalizedNode normalizedFrom in ToNormalizedNodes(from))
+            {
+                foreach (NormalizedNode normalizedTo in ToNormalizedNodes(to))
+                {
+                    normalizedEdges.Add(new NormalizedEdge(normalizedFrom, normalizedTo));
+                }
+            }
         }
 
         return normalizedEdges;
@@ -51,13 +74,13 @@ internal static class Normalization
 
 internal sealed record NormalizedNode(
     string ProjectPath,
-    IReadOnlyList<string> EffectiveTargets,
+    string Target,
     IReadOnlyDictionary<string, string> GlobalProperties)
 {
     public string DisplayName => ToIdentityString();
 
     public string ToIdentityString() =>
-        $"{ProjectPath}|targets={string.Join(';', EffectiveTargets)}|globals={string.Join(';', GlobalProperties.Select(static pair => $"{pair.Key}={pair.Value}"))}";
+        $"{ProjectPath}|target={Target}|globals={string.Join(';', GlobalProperties.Select(static pair => $"{pair.Key}={pair.Value}"))}";
 }
 
 internal sealed record NormalizedEdge(NormalizedNode From, NormalizedNode To)
@@ -73,13 +96,13 @@ internal sealed class NormalizedNodeComparer : IEqualityComparer<NormalizedNode>
         x is not null &&
         y is not null &&
         StringComparer.OrdinalIgnoreCase.Equals(x.ProjectPath, y.ProjectPath) &&
-        x.EffectiveTargets.SequenceEqual(y.EffectiveTargets, StringComparer.OrdinalIgnoreCase) &&
+        StringComparer.OrdinalIgnoreCase.Equals(x.Target, y.Target) &&
         DictionaryEquals(x.GlobalProperties, y.GlobalProperties);
 
     public int GetHashCode(NormalizedNode obj) =>
         HashCode.Combine(
             StringComparer.OrdinalIgnoreCase.GetHashCode(obj.ProjectPath),
-            SequenceHashCode(obj.EffectiveTargets),
+            StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Target),
             DictionaryHashCode(obj.GlobalProperties));
 
     private static bool DictionaryEquals(IReadOnlyDictionary<string, string> left, IReadOnlyDictionary<string, string> right)
@@ -99,17 +122,6 @@ internal sealed class NormalizedNodeComparer : IEqualityComparer<NormalizedNode>
         }
 
         return true;
-    }
-
-    private static int SequenceHashCode(IEnumerable<string> values)
-    {
-        HashCode hashCode = new();
-        foreach (string value in values)
-        {
-            hashCode.Add(value, StringComparer.OrdinalIgnoreCase);
-        }
-
-        return hashCode.ToHashCode();
     }
 
     private static int DictionaryHashCode(IReadOnlyDictionary<string, string> properties)

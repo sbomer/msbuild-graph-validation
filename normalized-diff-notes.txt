@@ -39,7 +39,7 @@ The primary files are:
 `nodes.txt` renders normalized nodes as:
 
   Project: ...
-    Targets: ...
+    Target: ...
       Globals: ...
 
 `edges.txt` renders one sorted canonical line per normalized edge:
@@ -56,24 +56,23 @@ Normalization is centralized in:
 Each GraphNode is normalized to a structured identity:
 
   ProjectPath
-  EffectiveTargets
+  Target
   GlobalProperties
 
 ProjectPath:
 
   Full normalized path with backslashes converted to slashes.
 
-EffectiveTargets:
+Target:
 
-  If RequestedTargets is non-empty:
+  The tool first computes effective targets:
 
-    EffectiveTargets = RequestedTargets
+    RequestedTargets when non-empty, otherwise DefaultTargets
 
-  Otherwise:
+  Then each effective target becomes a separate normalized node. This means a
+  request for A;B is represented as one A node and one B node.
 
-    EffectiveTargets = DefaultTargets
-
-  If DefaultTargets cannot be resolved, the effective target list remains empty
+  If DefaultTargets cannot be resolved, the target remains empty
   and dynamic conversion emits a warning diagnostic. The tool does not guess that
   an empty target list means Build.
 
@@ -95,7 +94,7 @@ Equality
 NormalizedNode equality compares:
 
   - ProjectPath, case-insensitive
-  - EffectiveTargets sequence, case-insensitive
+  - Target, case-insensitive
   - GlobalProperties dictionary, case-insensitive keys and values
 
 NormalizedEdge equality compares:
@@ -137,8 +136,8 @@ Build.proj no longer differs:
   static RequestedTargets  = [Build]
   static DefaultTargets    = [Build]
 
-Both normalize to:
+Both include the same normalized target:
 
-  EffectiveTargets = [Build]
+  Target = Build
 
 and IsGraphBuild is ignored.
