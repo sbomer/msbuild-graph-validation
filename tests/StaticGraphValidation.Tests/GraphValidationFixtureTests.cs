@@ -160,6 +160,44 @@ public sealed class GraphValidationFixtureTests
     }
 
     [Fact]
+    public async Task CaptureProjectReferencesRecordsSdkSelectedTargetFramework()
+    {
+        string repoRoot = FindRepoRoot();
+        string fixtureRoot = Path.Combine(repoRoot, "tests", "StaticGraphValidation.Tests", "TestProjects", "multitargeted-project-reference");
+        string outputRoot = Path.Combine(repoRoot, "artifacts", "tmp", "tests", nameof(CaptureProjectReferencesRecordsSdkSelectedTargetFramework));
+
+        if (Directory.Exists(outputRoot))
+        {
+            Directory.Delete(outputRoot, recursive: true);
+        }
+
+        Directory.CreateDirectory(outputRoot);
+        string captureFile = Path.Combine(outputRoot, "project-references.txt");
+
+        await Run(repoRoot, "dotnet", ["msbuild", Path.Combine(fixtureRoot, "parent/parent.csproj"), "/t:Restore", "/nologo", "/v:minimal"]);
+        await Run(
+            repoRoot,
+            "dotnet",
+            [
+                "msbuild",
+                Path.Combine(fixtureRoot, "root.proj"),
+                "/nologo",
+                "/v:minimal",
+                "/p:Restore=false",
+                "/p:CaptureProjectReferences=true",
+                $"/p:CaptureProjectReferencesFile={captureFile}",
+                $"/p:CustomAfterMicrosoftCommonTargets={Path.Combine(fixtureRoot, "capture-project-references.targets")}"
+            ]);
+
+        string[] lines = await File.ReadAllLinesAsync(captureFile);
+        Assert.Contains(
+            lines,
+            line => line.Contains("parent/parent.csproj", StringComparison.OrdinalIgnoreCase) &&
+                line.Contains("child/child.csproj", StringComparison.OrdinalIgnoreCase) &&
+                line.Contains("TargetFramework=net8.0", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task SingleProjectReferenceMatchesStaticGraph()
     {
         GraphCounts counts = await RunGraphValidationFixture(

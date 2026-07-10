@@ -1,0 +1,16 @@
+<Project>
+  <Target Name="CaptureProjectReferences"
+          AfterTargets="_GetProjectReferenceTargetFrameworkProperties"
+          Condition="'$(CaptureProjectReferences)' == 'true' and '$(CaptureProjectReferencesFile)' != ''">
+    <ItemGroup>
+      <_CapturedProjectReference Include="@(_MSBuildProjectReferenceExistent)">
+        <Line>$(MSBuildProjectFullPath)|%(_MSBuildProjectReferenceExistent.FullPath)|%(_MSBuildProjectReferenceExistent.SetTargetFramework)|%(_MSBuildProjectReferenceExistent.SetConfiguration)|%(_MSBuildProjectReferenceExistent.SetPlatform)|%(_MSBuildProjectReferenceExistent.UndefineProperties)|%(_MSBuildProjectReferenceExistent.GlobalPropertiesToRemove)|%(_MSBuildProjectReferenceExistent.SkipGetTargetFrameworkProperties)</Line>
+      </_CapturedProjectReference>
+    </ItemGroup>
+
+    <MakeDir Directories="$([System.IO.Path]::GetDirectoryName('$(CaptureProjectReferencesFile)'))" />
+    <WriteLinesToFile File="$(CaptureProjectReferencesFile)"
+                      Lines="@(_CapturedProjectReference->'%(Line)')"
+                      Overwrite="false" />
+  </Target>
+</Project>
