@@ -1,0 +1,13 @@
+<Project DefaultTargets="Build">
+  <Target Name="AddProjectReference">
+    <ItemGroup>
+      <ProjectReference Include="referenced.proj" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="Build"
+          DependsOnTargets="AddProjectReference">
+    <Message Importance="High" Text="Building root" />
+    <MSBuild Projects="@(ProjectReference)" />
+  </Target>
+</Project>

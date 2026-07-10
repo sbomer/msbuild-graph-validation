@@ -107,6 +107,19 @@ public sealed class GraphValidationFixtureTests
     }
 
     [Fact]
+    public async Task DynamicallyAddedProjectReferenceIsNotVisibleToIsolatedGraphBuild()
+    {
+        string output = await RunIsolatedGraphBuildExpectingFailure(
+            "dynamic-project-reference-item",
+            "root.proj",
+            nameof(DynamicallyAddedProjectReferenceIsNotVisibleToIsolatedGraphBuild));
+
+        Assert.Contains("MSB4252", output);
+        Assert.Contains("referenced.proj", output);
+        Assert.Contains("not explicitly specified as a ProjectReference item", output);
+    }
+
+    [Fact]
     public async Task SeparateDynamicTargetInvocationsDifferFromBatchedGraphTargets()
     {
         (string dynamicJson, string graphBuildJson, string comparisonText) = await RunGraphBuildBinlogComparison(

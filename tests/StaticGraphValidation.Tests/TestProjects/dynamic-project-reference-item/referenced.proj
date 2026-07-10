@@ -1,0 +1,5 @@
+<Project DefaultTargets="Build">
+  <Target Name="Build">
+    <Message Importance="High" Text="Building dynamically referenced project" />
+  </Target>
+</Project>
