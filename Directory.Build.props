@@ -1,13 +1,13 @@
 <Project>
   <PropertyGroup>
     <UseArtifactsOutput>true</UseArtifactsOutput>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
 
   <PropertyGroup>
-    <MicrosoftBuildPackageVersion>17.11.48</MicrosoftBuildPackageVersion>
+    <MicrosoftBuildPackageVersion>18.0.2</MicrosoftBuildPackageVersion>
   </PropertyGroup>
 </Project>

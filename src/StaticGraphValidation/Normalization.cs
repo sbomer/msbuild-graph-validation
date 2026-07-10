@@ -23,29 +23,19 @@ internal static class Normalization
 
     public static CanonicalNode ToCanonicalNode(GraphNode node)
     {
-        string projectPath = node.RelativePath ?? node.ProjectPath.Replace('\\', '/');
+        string projectPath = Path.GetFullPath(node.ProjectPath).Replace('\\', '/');
         string role = IsQueryOnlyNode(node) ? $"Query:{string.Join(";", node.RequestedTargets)}" : "Build";
         return new CanonicalNode(
             projectPath,
             role,
-            node.RequestedTargets,
-            GetDimension(node, "Configuration"),
-            GetDimension(node, "TargetFramework"),
-            GetDimension(node, "RuntimeIdentifier"),
-            GetDimension(node, "TargetOS"),
-            GetDimension(node, "TargetArchitecture"),
-            GetDimension(node, "TargetRid"));
+            EffectiveRequestedTargets(node),
+            NormalizedGlobalProperties(node));
     }
 
     public static NormalizedNode Project(CanonicalNode node, ComparisonProjection projection)
     {
-        string targetFramework = projection is ComparisonProjection.QueryStrict or ComparisonProjection.BuildStrict ? node.TargetFramework.Value : "";
-        string runtimeIdentifier = projection == ComparisonProjection.BuildStrict && node.RuntimeIdentifier.Source == IdentitySource.Global ? node.RuntimeIdentifier.Value : "";
-        string targetOS = projection == ComparisonProjection.BuildStrict && node.TargetOS.Source == IdentitySource.Global ? node.TargetOS.Value : "";
-        string targetArchitecture = projection == ComparisonProjection.BuildStrict && node.TargetArchitecture.Source == IdentitySource.Global ? node.TargetArchitecture.Value : "";
-        string targetRid = projection == ComparisonProjection.BuildStrict && node.TargetRid.Source == IdentitySource.Global ? node.TargetRid.Value : "";
         string role = projection == ComparisonProjection.FullPresence ? node.Role.Split(':')[0] : node.Role;
-        return new NormalizedNode(node.ProjectPath, node.Configuration.Value, targetFramework, runtimeIdentifier, targetOS, targetArchitecture, targetRid, role);
+        return new NormalizedNode(node.ProjectPath, node.EffectiveTargets, node.GlobalProperties, role);
     }
 
     public static HashSet<NormalizedEdge> ProjectEdges(
@@ -93,15 +83,14 @@ internal static class Normalization
         return node.RequestedTargets.All(s_queryTargets.Contains);
     }
 
-    private static IdentityDimension GetDimension(GraphNode node, string name)
-    {
-        if (node.GlobalProperties.TryGetValue(name, out string? globalValue))
-        {
-            return new IdentityDimension(globalValue, IdentitySource.Global);
-        }
+    private static IReadOnlyList<string> EffectiveRequestedTargets(GraphNode node) =>
+        node.RequestedTargets.Count > 0 ? node.RequestedTargets : node.DefaultTargets;
 
-        return new IdentityDimension("", IdentitySource.None);
-    }
+    private static IReadOnlyDictionary<string, string> NormalizedGlobalProperties(GraphNode node) =>
+        node.GlobalProperties
+            .Where(static pair => !pair.Key.Equals("IsGraphBuild", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(static pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(static pair => pair.Key, static pair => pair.Value, StringComparer.OrdinalIgnoreCase);
 }
 
 internal enum ComparisonProjection
@@ -119,75 +108,24 @@ internal enum EdgeClass
     Build
 }
 
-internal enum IdentitySource
-{
-    None,
-    Global
-}
-
-internal sealed record IdentityDimension(string Value, IdentitySource Source);
-
 internal sealed record CanonicalNode(
     string ProjectPath,
     string Role,
-    IReadOnlyList<string> RequestedTargets,
-    IdentityDimension Configuration,
-    IdentityDimension TargetFramework,
-    IdentityDimension RuntimeIdentifier,
-    IdentityDimension TargetOS,
-    IdentityDimension TargetArchitecture,
-    IdentityDimension TargetRid);
+    IReadOnlyList<string> EffectiveTargets,
+    IReadOnlyDictionary<string, string> GlobalProperties);
 
 internal sealed record CanonicalEdge(CanonicalNode From, CanonicalNode To, string Role);
 
 internal sealed record NormalizedNode(
     string ProjectPath,
-    string Configuration,
-    string TargetFramework,
-    string RuntimeIdentifier,
-    string TargetOS,
-    string TargetArchitecture,
-    string TargetRid,
+    IReadOnlyList<string> EffectiveTargets,
+    IReadOnlyDictionary<string, string> GlobalProperties,
     string Role)
 {
-    public string DisplayName
-    {
-        get
-        {
-            List<string> properties = [];
-            if (!string.IsNullOrEmpty(TargetFramework))
-            {
-                properties.Add($"TargetFramework={TargetFramework}");
-            }
+    public string DisplayName => ToIdentityString();
 
-            if (!string.IsNullOrEmpty(Configuration))
-            {
-                properties.Add($"Configuration={Configuration}");
-            }
-
-            if (!string.IsNullOrEmpty(RuntimeIdentifier))
-            {
-                properties.Add($"RuntimeIdentifier={RuntimeIdentifier}");
-            }
-
-            if (!string.IsNullOrEmpty(TargetOS))
-            {
-                properties.Add($"TargetOS={TargetOS}");
-            }
-
-            if (!string.IsNullOrEmpty(TargetArchitecture))
-            {
-                properties.Add($"TargetArchitecture={TargetArchitecture}");
-            }
-
-            if (!string.IsNullOrEmpty(TargetRid))
-            {
-                properties.Add($"TargetRid={TargetRid}");
-            }
-
-            return properties.Count == 0 ? ProjectPath : $"{ProjectPath} [{string.Join(", ", properties)}]";
-        }
-    }
+    public string ToIdentityString() =>
+        $"{ProjectPath}|targets={string.Join(';', EffectiveTargets)}|globals={string.Join(';', GlobalProperties.Select(static pair => $"{pair.Key}={pair.Value}"))}";
 }
 
 internal sealed record NormalizedEdge(NormalizedNode From, NormalizedNode To, string Role)
@@ -203,24 +141,58 @@ internal sealed class NormalizedNodeComparer : IEqualityComparer<NormalizedNode>
         x is not null &&
         y is not null &&
         StringComparer.OrdinalIgnoreCase.Equals(x.ProjectPath, y.ProjectPath) &&
-        StringComparer.OrdinalIgnoreCase.Equals(x.Configuration, y.Configuration) &&
-        StringComparer.OrdinalIgnoreCase.Equals(x.TargetFramework, y.TargetFramework) &&
-        StringComparer.OrdinalIgnoreCase.Equals(x.RuntimeIdentifier, y.RuntimeIdentifier) &&
-        StringComparer.OrdinalIgnoreCase.Equals(x.TargetOS, y.TargetOS) &&
-        StringComparer.OrdinalIgnoreCase.Equals(x.TargetArchitecture, y.TargetArchitecture) &&
-        StringComparer.OrdinalIgnoreCase.Equals(x.TargetRid, y.TargetRid) &&
+        x.EffectiveTargets.SequenceEqual(y.EffectiveTargets, StringComparer.OrdinalIgnoreCase) &&
+        DictionaryEquals(x.GlobalProperties, y.GlobalProperties) &&
         StringComparer.OrdinalIgnoreCase.Equals(x.Role, y.Role);
 
     public int GetHashCode(NormalizedNode obj) =>
         HashCode.Combine(
             StringComparer.OrdinalIgnoreCase.GetHashCode(obj.ProjectPath),
-            StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Configuration),
-            StringComparer.OrdinalIgnoreCase.GetHashCode(obj.TargetFramework),
-            StringComparer.OrdinalIgnoreCase.GetHashCode(obj.RuntimeIdentifier),
-            StringComparer.OrdinalIgnoreCase.GetHashCode(obj.TargetOS),
-            StringComparer.OrdinalIgnoreCase.GetHashCode(obj.TargetArchitecture),
-            StringComparer.OrdinalIgnoreCase.GetHashCode(obj.TargetRid),
+            SequenceHashCode(obj.EffectiveTargets),
+            DictionaryHashCode(obj.GlobalProperties),
             StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Role));
+
+    private static bool DictionaryEquals(IReadOnlyDictionary<string, string> left, IReadOnlyDictionary<string, string> right)
+    {
+        if (left.Count != right.Count)
+        {
+            return false;
+        }
+
+        foreach ((string key, string value) in left)
+        {
+            if (!right.TryGetValue(key, out string? rightValue) ||
+                !StringComparer.OrdinalIgnoreCase.Equals(value, rightValue))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static int SequenceHashCode(IEnumerable<string> values)
+    {
+        HashCode hashCode = new();
+        foreach (string value in values)
+        {
+            hashCode.Add(value, StringComparer.OrdinalIgnoreCase);
+        }
+
+        return hashCode.ToHashCode();
+    }
+
+    private static int DictionaryHashCode(IReadOnlyDictionary<string, string> properties)
+    {
+        HashCode hashCode = new();
+        foreach ((string key, string value) in properties.OrderBy(static pair => pair.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            hashCode.Add(key, StringComparer.OrdinalIgnoreCase);
+            hashCode.Add(value, StringComparer.OrdinalIgnoreCase);
+        }
+
+        return hashCode.ToHashCode();
+    }
 }
 
 internal sealed class NormalizedEdgeComparer : IEqualityComparer<NormalizedEdge>

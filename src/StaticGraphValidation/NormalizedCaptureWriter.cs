@@ -51,12 +51,8 @@ internal static class NormalizedCaptureWriter
         string.Join('|',
             $"Role={Escape(node.Role)}",
             $"Project={Escape(node.ProjectPath)}",
-            $"Configuration={Escape(node.Configuration)}",
-            $"TargetFramework={Escape(node.TargetFramework)}",
-            $"RuntimeIdentifier={Escape(node.RuntimeIdentifier)}",
-            $"TargetOS={Escape(node.TargetOS)}",
-            $"TargetArchitecture={Escape(node.TargetArchitecture)}",
-            $"TargetRid={Escape(node.TargetRid)}");
+            $"Targets={Escape(string.Join(';', node.EffectiveTargets))}",
+            $"GlobalProperties={Escape(string.Join(';', node.GlobalProperties.Select(static pair => $"{pair.Key}={pair.Value}")))}");
 
     private static string EdgeLine(NormalizedEdge edge) =>
         string.Join('|',

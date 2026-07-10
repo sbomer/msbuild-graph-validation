@@ -13,6 +13,8 @@ internal static class CommandLine
                 "static" => RunStatic(rest),
                 "normalize" => RunNormalize(rest),
                 "normalize-replay" => RunNormalizeReplay(rest),
+                "compare" => RunCompare(rest),
+                "compare-binlogs" => RunCompareBinlogs(rest),
                 "compare-replay" => RunCompareReplay(rest),
                 _ => Unknown(command)
             };
@@ -47,6 +49,8 @@ internal static class CommandLine
               StaticGraphValidation dynamic <binlog> [options]
               StaticGraphValidation static <project> [options]
               StaticGraphValidation normalize <capture.json> --output-dir directory
+              StaticGraphValidation compare --left left.json --right right.json [options]
+              StaticGraphValidation compare-binlogs --left left.binlog --right right.binlog [options]
               StaticGraphValidation normalize-replay --dynamic baseline.json --phase1 query.json --static replay.json --output-dir directory
               StaticGraphValidation compare-replay --dynamic baseline.json --phase1 query.json --static replay.json [options]
 
@@ -56,7 +60,7 @@ internal static class CommandLine
               -o|--output path           output path (default: stdout)
               --repo-root path           path used for relative display
               --output-dir path          directory for normalized text files
-              --format text|json         output format for compare-replay (default: text)
+              --format text|json         output format for compare commands (default: text)
             """);
     }
 
@@ -129,6 +133,36 @@ internal static class CommandLine
         return 0;
     }
 
+    private static int RunCompare(string[] args)
+    {
+        Options options = Options.Parse(args);
+        if (options.LeftPath is null || options.RightPath is null)
+        {
+            PrintUsage();
+            return 1;
+        }
+
+        GraphComparison comparison = GraphComparer.Compare(GraphJson.Read(options.LeftPath), GraphJson.Read(options.RightPath));
+        WriteComparison(comparison, options);
+        return GraphComparisonExitCode(comparison);
+    }
+
+    private static int RunCompareBinlogs(string[] args)
+    {
+        Options options = Options.Parse(args);
+        if (options.LeftPath is null || options.RightPath is null)
+        {
+            PrintUsage();
+            return 1;
+        }
+
+        GraphComparison comparison = GraphComparer.Compare(
+            DynamicBinlogCapture.Capture(options.LeftPath, options),
+            DynamicBinlogCapture.Capture(options.RightPath, options));
+        WriteComparison(comparison, options);
+        return GraphComparisonExitCode(comparison);
+    }
+
     private static int RunCompareReplay(string[] args)
     {
         Options options = Options.Parse(args);
@@ -159,6 +193,22 @@ internal static class CommandLine
                 : 2;
     }
 
+    private static void WriteComparison(GraphComparison comparison, Options options)
+    {
+        string report = options.Format.Equals("json", StringComparison.OrdinalIgnoreCase)
+            ? GraphJson.Serialize(comparison)
+            : GraphComparisonReportWriter.Write(comparison);
+        WriteText(report, options.OutputPath);
+    }
+
+    private static int GraphComparisonExitCode(GraphComparison comparison) =>
+        comparison.LeftOnlyNodes.Count == 0 &&
+        comparison.RightOnlyNodes.Count == 0 &&
+        comparison.LeftOnlyEdges.Count == 0 &&
+        comparison.RightOnlyEdges.Count == 0
+            ? 0
+            : 2;
+
     private static void WriteText(string text, string? outputPath)
     {
         if (string.IsNullOrWhiteSpace(outputPath))
@@ -181,4 +231,3 @@ internal static class CommandLine
         return 1;
     }
 }
-

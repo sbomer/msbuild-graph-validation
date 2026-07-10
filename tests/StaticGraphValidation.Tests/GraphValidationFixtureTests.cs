@@ -9,14 +9,88 @@ public sealed class GraphValidationFixtureTests
     private sealed record GraphCounts(int DynamicNodes, int DynamicEdges, int StaticNodes, int StaticEdges);
 
     [Fact]
-    public async Task SingleProjectWithNoProjectReferencesMatchesStaticGraph()
+    public async Task SingleProjectWithNoProjectReferencesExplicitBuildMatchesStaticGraph()
     {
         GraphCounts counts = await RunGraphValidationFixture(
             "single-project-no-references",
             "build.proj",
-            nameof(SingleProjectWithNoProjectReferencesMatchesStaticGraph));
+            nameof(SingleProjectWithNoProjectReferencesExplicitBuildMatchesStaticGraph),
+            entryTargets: ["Build"]);
 
         Assert.Equal(new GraphCounts(1, 0, 1, 0), counts);
+    }
+
+    [Fact]
+    public async Task SingleProjectWithNoProjectReferencesDefaultTargetsMatchStaticGraph()
+    {
+        GraphCounts counts = await RunGraphValidationFixture(
+            "single-project-no-references",
+            "build.proj",
+            nameof(SingleProjectWithNoProjectReferencesDefaultTargetsMatchStaticGraph),
+            entryTargets: []);
+
+        Assert.Equal(new GraphCounts(1, 0, 1, 0), counts);
+    }
+
+    [Fact]
+    public async Task EmptyEntryTargetsNormalizeToDefaultTargets()
+    {
+        (string dynamicJson, string staticJson, _) = await RunGraphValidationFixture(
+            "single-project-no-references",
+            "build.proj",
+            nameof(EmptyEntryTargetsNormalizeToDefaultTargets),
+            dynamicEntryTargets: [],
+            staticEntryTargets: ["Build"],
+            expectedComparisonExitCode: 0);
+
+        Assert.Equal([], RequestedTargets(dynamicJson, "build.proj"));
+        Assert.Equal(["Build"], RequestedTargets(staticJson, "build.proj"));
+    }
+
+    [Fact]
+    public async Task GraphBuildDefaultTargetsAreRecordedAsExplicitBuildTargets()
+    {
+        (string dynamicJson, string graphBuildJson, _) = await RunGraphBuildBinlogComparison(
+            "single-project-no-references",
+            "build.proj",
+            nameof(GraphBuildDefaultTargetsAreRecordedAsExplicitBuildTargets),
+            isolateProjects: true,
+            expectedComparisonExitCode: 0);
+
+        Assert.Equal([], RequestedTargets(dynamicJson, "build.proj"));
+        Assert.Equal(["Build"], RequestedTargets(graphBuildJson, "build.proj"));
+    }
+
+    [Fact]
+    public async Task GraphBuildDefaultTargetsAreNotPropagatedToNestedDefaultTargetBuilds()
+    {
+        (string dynamicJson, string graphBuildJson, _) = await RunGraphBuildBinlogComparison(
+            "single-project-reference",
+            "root.proj",
+            nameof(GraphBuildDefaultTargetsAreNotPropagatedToNestedDefaultTargetBuilds),
+            isolateProjects: false,
+            expectedComparisonExitCode: 0);
+
+        Assert.Equal([], RequestedTargets(dynamicJson, "root.proj"));
+        Assert.Equal([], RequestedTargets(dynamicJson, "referenced.proj"));
+        Assert.Equal(["Build"], RequestedTargets(graphBuildJson, "root.proj"));
+        Assert.Equal([], RequestedTargets(graphBuildJson, "referenced.proj"));
+    }
+
+    [Fact]
+    public async Task IsolatedGraphBuildDefaultProjectReferenceTargetsAddExplicitReferencedBuildNode()
+    {
+        (string dynamicJson, string graphBuildJson, _) = await RunGraphBuildBinlogComparison(
+            "graph-build-reference-default-target",
+            "root.proj",
+            nameof(IsolatedGraphBuildDefaultProjectReferenceTargetsAddExplicitReferencedBuildNode),
+            isolateProjects: true,
+            expectedComparisonExitCode: 0);
+
+        Assert.Equal([TargetList()], RequestedTargetLists(dynamicJson, "root.proj"));
+        Assert.Equal([TargetList()], RequestedTargetLists(dynamicJson, "referenced.proj"));
+        Assert.Equal([TargetList("Build")], RequestedTargetLists(graphBuildJson, "root.proj"));
+        Assert.Equal([TargetList(), TargetList("Build")], RequestedTargetLists(graphBuildJson, "referenced.proj"));
     }
 
     [Fact]
@@ -25,12 +99,84 @@ public sealed class GraphValidationFixtureTests
         GraphCounts counts = await RunGraphValidationFixture(
             "single-project-reference",
             "root.proj",
-            nameof(SingleProjectReferenceMatchesStaticGraph));
+            nameof(SingleProjectReferenceMatchesStaticGraph),
+            entryTargets: ["Build"]);
 
         Assert.Equal(new GraphCounts(2, 1, 2, 1), counts);
     }
 
-    private static async Task<GraphCounts> RunGraphValidationFixture(string fixtureName, string entryProject, string testName)
+    private static async Task<GraphCounts> RunGraphValidationFixture(
+        string fixtureName,
+        string entryProject,
+        string testName,
+        string[] entryTargets)
+    {
+        (string dynamicJson, string staticJson, _) = await RunGraphValidationFixture(
+            fixtureName,
+            entryProject,
+            testName,
+            dynamicEntryTargets: entryTargets,
+            staticEntryTargets: entryTargets,
+            expectedComparisonExitCode: 0);
+
+        using JsonDocument dynamicCapture = JsonDocument.Parse(await File.ReadAllTextAsync(dynamicJson));
+        using JsonDocument staticCapture = JsonDocument.Parse(await File.ReadAllTextAsync(staticJson));
+
+        return new GraphCounts(
+            NodeCount(dynamicCapture),
+            EdgeCount(dynamicCapture),
+            NodeCount(staticCapture),
+            EdgeCount(staticCapture));
+    }
+
+    private static async Task<(string DynamicJson, string GraphBuildJson, string ComparisonText)> RunGraphBuildBinlogComparison(
+        string fixtureName,
+        string entryProject,
+        string testName,
+        bool isolateProjects,
+        int expectedComparisonExitCode)
+    {
+        string repoRoot = FindRepoRoot();
+        string fixtureRoot = Path.Combine(repoRoot, "tests", "StaticGraphValidation.Tests", "TestProjects", fixtureName);
+        string projectPath = Path.Combine(fixtureRoot, entryProject);
+        string outputRoot = Path.Combine(repoRoot, "artifacts", "tmp", "tests", testName);
+
+        if (Directory.Exists(outputRoot))
+        {
+            Directory.Delete(outputRoot, recursive: true);
+        }
+
+        Directory.CreateDirectory(outputRoot);
+
+        string dynamicBinlog = Path.Combine(outputRoot, "dynamic.binlog");
+        string graphBuildBinlog = Path.Combine(outputRoot, "graph-build.binlog");
+        string dynamicJson = Path.Combine(outputRoot, "dynamic.json");
+        string graphBuildJson = Path.Combine(outputRoot, "graph-build.json");
+        string comparisonText = Path.Combine(outputRoot, "comparison.txt");
+
+        await Run(repoRoot, "dotnet", ["msbuild", projectPath, $"/bl:{dynamicBinlog}", "/nologo", "/v:minimal"]);
+
+        List<string> graphBuildArguments = ["msbuild", projectPath, "/graphBuild", $"/bl:{graphBuildBinlog}", "/nologo", "/v:minimal"];
+        if (isolateProjects)
+        {
+            graphBuildArguments.Insert(3, "/isolateProjects");
+        }
+
+        await Run(repoRoot, "dotnet", graphBuildArguments);
+        await Run(repoRoot, "dotnet", ["run", "--no-build", "--project", Path.Combine(repoRoot, "src", "StaticGraphValidation"), "--", "dynamic", dynamicBinlog, "--repo-root", fixtureRoot, "-o", dynamicJson]);
+        await Run(repoRoot, "dotnet", ["run", "--no-build", "--project", Path.Combine(repoRoot, "src", "StaticGraphValidation"), "--", "dynamic", graphBuildBinlog, "--repo-root", fixtureRoot, "-o", graphBuildJson]);
+        await Run(repoRoot, "dotnet", ["run", "--no-build", "--project", Path.Combine(repoRoot, "src", "StaticGraphValidation"), "--", "compare", "--left", dynamicJson, "--right", graphBuildJson, "-o", comparisonText], expectedComparisonExitCode);
+
+        return (dynamicJson, graphBuildJson, comparisonText);
+    }
+
+    private static async Task<(string DynamicJson, string StaticJson, string ComparisonText)> RunGraphValidationFixture(
+        string fixtureName,
+        string entryProject,
+        string testName,
+        string[] dynamicEntryTargets,
+        string[] staticEntryTargets,
+        int expectedComparisonExitCode)
     {
         string repoRoot = FindRepoRoot();
         string fixtureRoot = Path.Combine(repoRoot, "tests", "StaticGraphValidation.Tests", "TestProjects", fixtureName);
@@ -46,39 +192,65 @@ public sealed class GraphValidationFixtureTests
 
         string dynamicBinlog = Path.Combine(outputRoot, "dynamic.binlog");
         string dynamicJson = Path.Combine(outputRoot, "dynamic.json");
-        string phase1Json = Path.Combine(outputRoot, "phase1.json");
         string staticJson = Path.Combine(outputRoot, "static.json");
         string comparisonText = Path.Combine(outputRoot, "comparison.txt");
 
-        await Run(repoRoot, "dotnet", ["msbuild", projectPath, "/t:Build", $"/bl:{dynamicBinlog}", "/nologo", "/v:minimal"]);
+        List<string> dynamicArguments = ["msbuild", projectPath, $"/bl:{dynamicBinlog}", "/nologo", "/v:minimal"];
+        if (dynamicEntryTargets.Length > 0)
+        {
+            dynamicArguments.Insert(2, $"/t:{string.Join(';', dynamicEntryTargets)}");
+        }
+
+        await Run(repoRoot, "dotnet", dynamicArguments);
         await Run(repoRoot, "dotnet", ["run", "--no-build", "--project", Path.Combine(repoRoot, "src", "StaticGraphValidation"), "--", "dynamic", dynamicBinlog, "--repo-root", fixtureRoot, "-o", dynamicJson]);
-        await Run(repoRoot, "dotnet", ["run", "--no-build", "--project", Path.Combine(repoRoot, "src", "StaticGraphValidation"), "--", "static", projectPath, "--repo-root", fixtureRoot, "-t", "Build", "-o", staticJson]);
 
-        await File.WriteAllTextAsync(phase1Json, """
-            {
-              "Schema": "static-graph-validation.v1",
-              "Kind": "dynamic",
-              "Nodes": [],
-              "Edges": [],
-              "Diagnostics": []
-            }
-            """);
+        List<string> staticArguments = ["run", "--no-build", "--project", Path.Combine(repoRoot, "src", "StaticGraphValidation"), "--", "static", projectPath, "--repo-root", fixtureRoot, "-o", staticJson];
+        if (staticEntryTargets.Length > 0)
+        {
+            staticArguments.InsertRange(staticArguments.Count - 2, ["-t", string.Join(';', staticEntryTargets)]);
+        }
 
-        await Run(repoRoot, "dotnet", ["run", "--no-build", "--project", Path.Combine(repoRoot, "src", "StaticGraphValidation"), "--", "compare-replay", "--dynamic", dynamicJson, "--phase1", phase1Json, "--static", staticJson, "-o", comparisonText]);
+        await Run(repoRoot, "dotnet", staticArguments);
 
-        using JsonDocument dynamicCapture = JsonDocument.Parse(await File.ReadAllTextAsync(dynamicJson));
-        using JsonDocument staticCapture = JsonDocument.Parse(await File.ReadAllTextAsync(staticJson));
+        await Run(repoRoot, "dotnet", ["run", "--no-build", "--project", Path.Combine(repoRoot, "src", "StaticGraphValidation"), "--", "compare", "--left", dynamicJson, "--right", staticJson, "-o", comparisonText], expectedComparisonExitCode);
 
-        return new GraphCounts(
-            NodeCount(dynamicCapture),
-            EdgeCount(dynamicCapture),
-            NodeCount(staticCapture),
-            EdgeCount(staticCapture));
+        return (dynamicJson, staticJson, comparisonText);
     }
 
     private static int NodeCount(JsonDocument capture) => capture.RootElement.GetProperty("Nodes").GetArrayLength();
 
     private static int EdgeCount(JsonDocument capture) => capture.RootElement.GetProperty("Edges").GetArrayLength();
+
+    private static string[] RequestedTargets(string capturePath, string relativePath)
+    {
+        using JsonDocument capture = JsonDocument.Parse(File.ReadAllText(capturePath));
+        JsonElement node = capture.RootElement
+            .GetProperty("Nodes")
+            .EnumerateArray()
+            .Single(node => node.GetProperty("RelativePath").GetString() == relativePath);
+
+        return node.GetProperty("RequestedTargets")
+            .EnumerateArray()
+            .Select(target => target.GetString()!)
+            .ToArray();
+    }
+
+    private static string[] RequestedTargetLists(string capturePath, string relativePath)
+    {
+        using JsonDocument capture = JsonDocument.Parse(File.ReadAllText(capturePath));
+        return capture.RootElement
+            .GetProperty("Nodes")
+            .EnumerateArray()
+            .Where(node => node.GetProperty("RelativePath").GetString() == relativePath)
+            .Select(node => TargetList(node.GetProperty("RequestedTargets")
+                .EnumerateArray()
+                .Select(target => target.GetString()!)
+                .ToArray()))
+            .OrderBy(static targets => targets, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static string TargetList(params string[] targets) => string.Join(';', targets);
 
     private static string FindRepoRoot()
     {
@@ -93,7 +265,7 @@ public sealed class GraphValidationFixtureTests
         throw new InvalidOperationException("Could not find repository root.");
     }
 
-    private static async Task Run(string workingDirectory, string fileName, string[] arguments)
+    private static async Task Run(string workingDirectory, string fileName, IReadOnlyList<string> arguments, int expectedExitCode = 0)
     {
         ProcessStartInfo startInfo = new()
         {
@@ -114,9 +286,9 @@ public sealed class GraphValidationFixtureTests
         await process.WaitForExitAsync();
 
         Assert.True(
-            process.ExitCode == 0,
+            process.ExitCode == expectedExitCode,
             $"""
-            Command failed with exit code {process.ExitCode}: {fileName} {string.Join(' ', arguments)}
+            Command failed with exit code {process.ExitCode}, expected {expectedExitCode}: {fileName} {string.Join(' ', arguments)}
 
             stdout:
             {standardOutput}

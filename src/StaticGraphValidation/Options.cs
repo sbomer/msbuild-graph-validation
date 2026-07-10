@@ -9,6 +9,8 @@ internal sealed class Options
     public string? DynamicPath { get; private set; }
     public string? Phase1Path { get; private set; }
     public string? StaticPath { get; private set; }
+    public string? LeftPath { get; private set; }
+    public string? RightPath { get; private set; }
 
     public static Options Parse(IEnumerable<string> args)
     {
@@ -59,6 +61,12 @@ internal sealed class Options
                 case "--static":
                     options.StaticPath = Next();
                     break;
+                case "--left":
+                    options.LeftPath = Next();
+                    break;
+                case "--right":
+                    options.RightPath = Next();
+                    break;
                 default:
                     if (arg.StartsWith("-p:", StringComparison.OrdinalIgnoreCase))
                     {
@@ -89,4 +97,3 @@ internal sealed class Options
         properties[value[..equals]] = value[(equals + 1)..];
     }
 }
-

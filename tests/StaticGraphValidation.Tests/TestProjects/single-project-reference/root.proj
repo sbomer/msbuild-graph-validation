@@ -5,6 +5,6 @@
 
   <Target Name="Build">
     <Message Importance="High" Text="Building root" />
-    <MSBuild Projects="@(ProjectReference)" Targets="Build" />
+    <MSBuild Projects="@(ProjectReference)" />
   </Target>
 </Project>

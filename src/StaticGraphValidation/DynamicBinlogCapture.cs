@@ -26,6 +26,7 @@ internal static class DynamicBinlogCapture
 
         Dictionary<string, GraphNode> nodes = new(StringComparer.Ordinal);
         List<GraphEdge> edges = [];
+        HashSet<string> defaultTargetDiagnostics = new(StringComparer.OrdinalIgnoreCase);
         Stack<GraphNode> parentStack = new();
         Stack<string> targetStack = new();
         Stack<string> taskStack = new();
@@ -49,7 +50,7 @@ internal static class DynamicBinlogCapture
             GraphNode? graphNode = null;
             if (isProject)
             {
-                graphNode = CreateDynamicNode(node, repoRoot);
+                graphNode = CreateDynamicNode(node, repoRoot, diagnostics, defaultTargetDiagnostics);
                 nodes.TryAdd(graphNode.Id, graphNode);
 
                 if (parentStack.TryPeek(out GraphNode? parent))
@@ -111,7 +112,11 @@ internal static class DynamicBinlogCapture
         };
     }
 
-    private static GraphNode CreateDynamicNode(object project, string repoRoot)
+    private static GraphNode CreateDynamicNode(
+        object project,
+        string repoRoot,
+        List<GraphDiagnostic> diagnostics,
+        HashSet<string> defaultTargetDiagnostics)
     {
         string projectPath = GetString(project, "ProjectFile") ?? GetString(project, "File") ?? GetString(project, "Name") ?? "<unknown>";
         if (File.Exists(projectPath))
@@ -121,7 +126,8 @@ internal static class DynamicBinlogCapture
 
         Dictionary<string, string> properties = ExtractProperties(project);
         string[] targets = ExtractTargets(project);
-        string[] defaultTargets = ExtractDefaultTargets(projectPath, properties);
+        string[] defaultTargets = ExtractDefaultTargets(projectPath, properties, diagnostics, defaultTargetDiagnostics);
+        AddUnresolvedDefaultTargetsDiagnostic(project, projectPath, targets, defaultTargets, diagnostics, defaultTargetDiagnostics);
         string key = Identity.NodeKey(projectPath, properties, targets);
         string relativePath = File.Exists(projectPath) ? Paths.Relativize(projectPath, repoRoot) : projectPath;
 
@@ -198,7 +204,39 @@ internal static class DynamicBinlogCapture
             : text.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     }
 
-    private static string[] ExtractDefaultTargets(string projectPath, Dictionary<string, string> properties)
+    private static void AddUnresolvedDefaultTargetsDiagnostic(
+        object project,
+        string projectPath,
+        IReadOnlyList<string> requestedTargets,
+        IReadOnlyList<string> defaultTargets,
+        List<GraphDiagnostic> diagnostics,
+        HashSet<string> defaultTargetDiagnostics)
+    {
+        if (requestedTargets.Count > 0 ||
+            defaultTargets.Count > 0 ||
+            !File.Exists(projectPath) ||
+            !GetChildren(project).Any(static child => child.GetType().Name.Equals("Target", StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        string key = $"{projectPath}|unresolved-default-targets";
+        if (defaultTargetDiagnostics.Add(key))
+        {
+            diagnostics.Add(new GraphDiagnostic
+            {
+                Severity = "warning",
+                Message = $"Unable to resolve default targets for '{projectPath}'. The binlog project invocation has no requested targets and project re-evaluation returned no default targets.",
+                Context = "Default-target normalization will preserve an empty target list for this project."
+            });
+        }
+    }
+
+    private static string[] ExtractDefaultTargets(
+        string projectPath,
+        Dictionary<string, string> properties,
+        List<GraphDiagnostic> diagnostics,
+        HashSet<string> defaultTargetDiagnostics)
     {
         if (!File.Exists(projectPath))
         {
@@ -210,8 +248,19 @@ internal static class DynamicBinlogCapture
             ProjectInstance project = new(projectPath, properties, toolsVersion: null);
             return project.DefaultTargets.ToArray();
         }
-        catch
+        catch (Exception ex)
         {
+            string key = $"{projectPath}|{ex.GetType().FullName}|{ex.Message}";
+            if (defaultTargetDiagnostics.Add(key))
+            {
+                diagnostics.Add(new GraphDiagnostic
+                {
+                    Severity = "warning",
+                    Message = $"Unable to extract default targets for '{projectPath}': {ex.Message}",
+                    Context = ex.ToString()
+                });
+            }
+
             return [];
         }
     }
@@ -252,4 +301,3 @@ internal static class DynamicBinlogCapture
     private static object? GetProperty(object obj, string propertyName) =>
         obj.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase)?.GetValue(obj);
 }
-

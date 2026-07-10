@@ -1,0 +1,136 @@
+How the normalized binlog diff is computed
+==========================================
+
+Inputs
+------
+
+1. Convert each binlog to a GraphCapture JSON:
+
+   dotnet run --project src/StaticGraphValidation -- \
+     dynamic <binlog> --repo-root <repo-root> -o <capture.json>
+
+   Dynamic conversion walks StructuredLogger Project nodes and records:
+
+   - ProjectPath / RelativePath
+   - RequestedTargets from Project.EntryTargets / TargetsText
+   - DefaultTargets by re-evaluating the project with the captured global properties
+   - GlobalProperties from the binlog Project node
+   - Parent/child project edges reconstructed from the StructuredLogger tree
+
+2. Compare captures:
+
+   dotnet run --project src/StaticGraphValidation -- \
+     compare --left <left.json> --right <right.json>
+
+Node normalization
+------------------
+
+Normalization is centralized in:
+
+  src/StaticGraphValidation/Normalization.cs
+
+Each GraphNode is normalized to a structured identity:
+
+  ProjectPath
+  EffectiveTargets
+  GlobalProperties
+  Role
+
+ProjectPath:
+
+  Full normalized path with backslashes converted to slashes.
+
+EffectiveTargets:
+
+  If RequestedTargets is non-empty:
+
+    EffectiveTargets = RequestedTargets
+
+  Otherwise:
+
+    EffectiveTargets = DefaultTargets
+
+  If DefaultTargets cannot be resolved, the effective target list remains empty
+  and dynamic conversion emits a warning diagnostic. The tool does not guess that
+  an empty target list means Build.
+
+GlobalProperties:
+
+  All captured global properties except approved ignored properties.
+
+  Currently ignored:
+
+    IsGraphBuild
+
+  No whitelist is applied. Properties such as Configuration, TargetFramework,
+  RuntimeIdentifier, Platform, FileVersion, and PackageTargetRuntime participate
+  because they remain in the normalized global-property dictionary.
+
+Role:
+
+  Query:<requested target list>
+
+    when all requested targets are query-only targets:
+
+      GetTargetFrameworks
+      GetTargetFrameworksWithPlatformForSingleTargetFramework
+
+  Build
+
+    for all other nodes.
+
+Equality
+--------
+
+NormalizedNode equality compares:
+
+  - ProjectPath, case-insensitive
+  - EffectiveTargets sequence, case-insensitive
+  - GlobalProperties dictionary, case-insensitive keys and values
+  - Role, case-insensitive
+
+NormalizedEdge equality compares:
+
+  - normalized From node
+  - normalized To node
+  - edge role: Query or Build
+
+Current CLR comparison command
+------------------------------
+
+The latest comparison was produced with:
+
+  out=/home/sven/src/runtime-staticgraph/artifacts/log/static-graph-validation/clr/structured-normalization-comparison
+
+  dotnet run --no-build --project src/StaticGraphValidation -- \
+    dynamic /home/sven/src/runtime-staticgraph/artifacts/log/static-graph-validation/clr/dynamic-clr.binlog \
+    --repo-root /home/sven/src/runtime-staticgraph \
+    -o "$out/dynamic-clr.json"
+
+  dotnet run --no-build --project src/StaticGraphValidation -- \
+    dynamic /home/sven/src/runtime-staticgraph/artifacts/log/static-graph-validation/clr/static-clr.binlog \
+    --repo-root /home/sven/src/runtime-staticgraph \
+    -o "$out/static-clr.json"
+
+  dotnet run --no-build --project src/StaticGraphValidation -- \
+    compare \
+    --left "$out/dynamic-clr.json" \
+    --right "$out/static-clr.json" \
+    -o "$out/comparison.txt"
+
+Current notable result
+----------------------
+
+Build.proj no longer differs:
+
+  dynamic RequestedTargets = []
+  dynamic DefaultTargets   = [Build]
+
+  static RequestedTargets  = [Build]
+  static DefaultTargets    = [Build]
+
+Both normalize to:
+
+  EffectiveTargets = [Build]
+
+and IsGraphBuild is ignored.
