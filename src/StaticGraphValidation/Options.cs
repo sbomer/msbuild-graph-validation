@@ -7,7 +7,6 @@ internal sealed class Options
     public string? RepoRoot { get; private set; }
     public string Format { get; private set; } = "text";
     public string? DynamicPath { get; private set; }
-    public string? Phase1Path { get; private set; }
     public string? StaticPath { get; private set; }
     public string? LeftPath { get; private set; }
     public string? RightPath { get; private set; }
@@ -54,9 +53,6 @@ internal sealed class Options
                     break;
                 case "--dynamic":
                     options.DynamicPath = Next();
-                    break;
-                case "--phase1":
-                    options.Phase1Path = Next();
                     break;
                 case "--static":
                     options.StaticPath = Next();

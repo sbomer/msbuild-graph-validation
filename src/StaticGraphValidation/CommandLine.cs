@@ -12,10 +12,8 @@ internal static class CommandLine
                 "dynamic" => RunDynamic(rest),
                 "static" => RunStatic(rest),
                 "normalize" => RunNormalize(rest),
-                "normalize-replay" => RunNormalizeReplay(rest),
                 "compare" => RunCompare(rest),
                 "compare-binlogs" => RunCompareBinlogs(rest),
-                "compare-replay" => RunCompareReplay(rest),
                 _ => Unknown(command)
             };
         }
@@ -51,8 +49,6 @@ internal static class CommandLine
               StaticGraphValidation normalize <capture.json> --output-dir directory
               StaticGraphValidation compare --left left.json --right right.json [options]
               StaticGraphValidation compare-binlogs --left left.binlog --right right.binlog [options]
-              StaticGraphValidation normalize-replay --dynamic baseline.json --phase1 query.json --static replay.json --output-dir directory
-              StaticGraphValidation compare-replay --dynamic baseline.json --phase1 query.json --static replay.json [options]
 
             options:
               -p|--property Name=Value   global property for static capture (repeatable)
@@ -111,28 +107,6 @@ internal static class CommandLine
         return 0;
     }
 
-    private static int RunNormalizeReplay(string[] args)
-    {
-        Options options = Options.Parse(args);
-        if (options.DynamicPath is null || options.Phase1Path is null || options.StaticPath is null)
-        {
-            PrintUsage();
-            return 1;
-        }
-
-        if (options.OutputDirectory is null)
-        {
-            throw new ArgumentException("--output-dir is required for normalize-replay.");
-        }
-
-        NormalizedCaptureWriter.WriteReplayInputs(
-            GraphJson.Read(options.DynamicPath),
-            GraphJson.Read(options.Phase1Path),
-            GraphJson.Read(options.StaticPath),
-            options.OutputDirectory);
-        return 0;
-    }
-
     private static int RunCompare(string[] args)
     {
         Options options = Options.Parse(args);
@@ -161,36 +135,6 @@ internal static class CommandLine
             DynamicBinlogCapture.Capture(options.RightPath, options));
         WriteComparison(comparison, options);
         return GraphComparisonExitCode(comparison);
-    }
-
-    private static int RunCompareReplay(string[] args)
-    {
-        Options options = Options.Parse(args);
-        if (options.DynamicPath is null || options.Phase1Path is null || options.StaticPath is null)
-        {
-            PrintUsage();
-            return 1;
-        }
-
-        ReplayComparison comparison = ReplayComparer.Compare(
-            GraphJson.Read(options.DynamicPath),
-            GraphJson.Read(options.Phase1Path),
-            GraphJson.Read(options.StaticPath));
-
-        string report = options.Format.Equals("json", StringComparison.OrdinalIgnoreCase)
-            ? GraphJson.Serialize(comparison)
-            : ReplayReportWriter.Write(comparison);
-        WriteText(report, options.OutputPath);
-        return comparison.QueryDynamicOnly.Count == 0 &&
-            comparison.QueryPhase1Only.Count == 0 &&
-            comparison.BuildPresenceDynamicOnly.Count == 0 &&
-            comparison.BuildPresenceStaticOnly.Count == 0 &&
-            comparison.QueryEdgeDynamicOnly.Count == 0 &&
-            comparison.QueryEdgePhase1Only.Count == 0 &&
-            comparison.BuildPresenceEdgeDynamicOnly.Count == 0 &&
-            comparison.BuildPresenceEdgeStaticOnly.Count == 0
-                ? 0
-                : 2;
     }
 
     private static void WriteComparison(GraphComparison comparison, Options options)

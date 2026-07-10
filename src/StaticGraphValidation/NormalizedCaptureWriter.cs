@@ -11,27 +11,6 @@ internal static class NormalizedCaptureWriter
         WriteProjection(capture, nodesById, outputDirectory, "build-strict", ComparisonProjection.BuildStrict, static node => !Normalization.IsQueryOnlyNode(node), EdgeClass.Build);
     }
 
-    public static void WriteReplayInputs(GraphCapture dynamicCapture, GraphCapture phase1Capture, GraphCapture staticCapture, string outputDirectory)
-    {
-        WriteReplayProjection(dynamicCapture, Path.Combine(outputDirectory, "query-strict"), "dynamic", ComparisonProjection.QueryStrict, Normalization.IsQueryOnlyNode, EdgeClass.Query);
-        WriteReplayProjection(phase1Capture, Path.Combine(outputDirectory, "query-strict"), "phase1", ComparisonProjection.QueryStrict, Normalization.IsQueryOnlyNode, EdgeClass.Query);
-        WriteReplayProjection(dynamicCapture, Path.Combine(outputDirectory, "build-presence"), "dynamic", ComparisonProjection.BuildPresence, static node => !Normalization.IsQueryOnlyNode(node), EdgeClass.Build);
-        WriteReplayProjection(staticCapture, Path.Combine(outputDirectory, "build-presence"), "static", ComparisonProjection.BuildPresence, static node => true, EdgeClass.All);
-    }
-
-    private static void WriteReplayProjection(
-        GraphCapture capture,
-        string outputDirectory,
-        string prefix,
-        ComparisonProjection projection,
-        Func<GraphNode, bool> nodePredicate,
-        EdgeClass edgeClass)
-    {
-        Directory.CreateDirectory(outputDirectory);
-        Dictionary<string, GraphNode> nodesById = Normalization.NodesById(capture);
-        WriteProjection(capture, nodesById, outputDirectory, prefix, projection, nodePredicate, edgeClass);
-    }
-
     private static void WriteProjection(
         GraphCapture capture,
         Dictionary<string, GraphNode> nodesById,

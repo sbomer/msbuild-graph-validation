@@ -34,17 +34,15 @@ Or compare binlogs directly:
 dotnet run --project src/StaticGraphValidation -- compare-binlogs --left path/to/left.binlog --right path/to/right.binlog --repo-root path/to/repo -o artifacts/log/static-graph-validation/comparison.txt
 ```
 
-## Static graph replay workflow
-
-The validation tool also supports the older replay workflow:
+## Static graph capture
 
 ```bash
 dotnet run --project src/StaticGraphValidation -- dynamic path/to/build.binlog --repo-root path/to/repo -o artifacts/log/static-graph-validation/dynamic.json
 dotnet run --project src/StaticGraphValidation -- static path/to/Build.proj --repo-root path/to/repo -p Name=Value -o artifacts/log/static-graph-validation/static.json
-dotnet run --project src/StaticGraphValidation -- compare-replay --dynamic dynamic.json --phase1 phase1.json --static static.json -o comparison.txt
+dotnet run --project src/StaticGraphValidation -- compare --left dynamic.json --right static.json -o comparison.txt
 ```
 
-For repos that need target-framework replay, import `targets/staticGraphTargetFrameworkSelection.targets`, build `src/StaticGraphTasks`, capture `CaptureStaticGraphSelectedTargetFrameworksRecursive`, then generate a selected-target-frameworks targets file with `GenerateStaticGraphSelectedTargetFrameworks`. By default, the replay raw/targets files are written under `$(ArtifactsObjDir)` when available, otherwise under the importing project's intermediate output directory.
+For repos that need target-framework selection, import `targets/staticGraphTargetFrameworkSelection.targets`, build `src/StaticGraphTasks`, capture `CaptureStaticGraphSelectedTargetFrameworksRecursive`, then generate a selected-target-frameworks targets file with `GenerateStaticGraphSelectedTargetFrameworks`. By default, the raw/targets files are written under `$(ArtifactsObjDir)` when available, otherwise under the importing project's intermediate output directory.
 
 The wrapper script does that flow and writes all generated files under this repo's `artifacts/` directory:
 

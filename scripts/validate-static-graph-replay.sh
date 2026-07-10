@@ -47,17 +47,17 @@ dotnet msbuild "$entry_project" \
   "/bl:$log_dir/dynamic.binlog" \
   "$@"
 
-echo "Capturing target framework replay selection..."
+echo "Capturing target framework selection..."
 dotnet msbuild "$entry_project" \
   /t:CaptureStaticGraphSelectedTargetFrameworksRecursive \
-  "/bl:$log_dir/phase1.binlog" \
+  "/bl:$log_dir/selection.binlog" \
   "$@" \
   "/p:CustomAfterMicrosoftCommonTargets=$custom_after" \
   /p:CaptureStaticGraphSelectedTargetFrameworks=true \
   "/p:StaticGraphSelectedTargetFrameworksRawFile=$raw_file" \
   "/p:StaticGraphTasksAssemblyPath=$tasks_dll"
 
-echo "Generating replay targets..."
+echo "Generating selected target framework targets..."
 dotnet msbuild "$entry_project" \
   /t:GenerateStaticGraphSelectedTargetFrameworks \
   "$@" \
@@ -68,9 +68,8 @@ dotnet msbuild "$entry_project" \
 
 echo "Converting dynamic captures..."
 dotnet run --no-build --project "$tool_root/src/StaticGraphValidation" -- dynamic "$log_dir/dynamic.binlog" --repo-root "$repo_root" -o "$log_dir/dynamic.json"
-dotnet run --no-build --project "$tool_root/src/StaticGraphValidation" -- dynamic "$log_dir/phase1.binlog" --repo-root "$repo_root" -o "$log_dir/phase1.json"
 
-echo "Capturing static graph replay..."
+echo "Capturing static graph..."
 dotnet run --no-build --project "$tool_root/src/StaticGraphValidation" -- static "$entry_project" \
   --repo-root "$repo_root" \
   "${static_targets[@]}" \
@@ -80,11 +79,10 @@ dotnet run --no-build --project "$tool_root/src/StaticGraphValidation" -- static
   -p "StaticGraphSelectedTargetFrameworksTargets=$targets_file" \
   -o "$log_dir/static.json"
 
-echo "Comparing replay graph projections..."
-dotnet run --no-build --project "$tool_root/src/StaticGraphValidation" -- compare-replay \
-  --dynamic "$log_dir/dynamic.json" \
-  --phase1 "$log_dir/phase1.json" \
-  --static "$log_dir/static.json" \
+echo "Comparing normalized graph projections..."
+dotnet run --no-build --project "$tool_root/src/StaticGraphValidation" -- compare \
+  --left "$log_dir/dynamic.json" \
+  --right "$log_dir/static.json" \
   -o "$log_dir/comparison.txt"
 
 echo "Wrote validation artifacts to $log_dir"
