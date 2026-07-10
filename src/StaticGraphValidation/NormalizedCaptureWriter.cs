@@ -4,18 +4,18 @@ internal static class NormalizedCaptureWriter
     {
         Directory.CreateDirectory(outputDirectory);
 
-        Dictionary<string, GraphNode> nodesById = ReplayComparer.NodesById(capture);
-        WriteProjection(capture, nodesById, outputDirectory, "query-strict", ComparisonProjection.QueryStrict, ReplayComparer.IsQueryOnlyNode, EdgeClass.Query);
+        Dictionary<string, GraphNode> nodesById = Normalization.NodesById(capture);
+        WriteProjection(capture, nodesById, outputDirectory, "query-strict", ComparisonProjection.QueryStrict, Normalization.IsQueryOnlyNode, EdgeClass.Query);
         WriteProjection(capture, nodesById, outputDirectory, "full-presence", ComparisonProjection.FullPresence, static node => true, EdgeClass.All);
-        WriteProjection(capture, nodesById, outputDirectory, "build-presence", ComparisonProjection.BuildPresence, static node => !ReplayComparer.IsQueryOnlyNode(node), EdgeClass.Build);
-        WriteProjection(capture, nodesById, outputDirectory, "build-strict", ComparisonProjection.BuildStrict, static node => !ReplayComparer.IsQueryOnlyNode(node), EdgeClass.Build);
+        WriteProjection(capture, nodesById, outputDirectory, "build-presence", ComparisonProjection.BuildPresence, static node => !Normalization.IsQueryOnlyNode(node), EdgeClass.Build);
+        WriteProjection(capture, nodesById, outputDirectory, "build-strict", ComparisonProjection.BuildStrict, static node => !Normalization.IsQueryOnlyNode(node), EdgeClass.Build);
     }
 
     public static void WriteReplayInputs(GraphCapture dynamicCapture, GraphCapture phase1Capture, GraphCapture staticCapture, string outputDirectory)
     {
-        WriteReplayProjection(dynamicCapture, Path.Combine(outputDirectory, "query-strict"), "dynamic", ComparisonProjection.QueryStrict, ReplayComparer.IsQueryOnlyNode, EdgeClass.Query);
-        WriteReplayProjection(phase1Capture, Path.Combine(outputDirectory, "query-strict"), "phase1", ComparisonProjection.QueryStrict, ReplayComparer.IsQueryOnlyNode, EdgeClass.Query);
-        WriteReplayProjection(dynamicCapture, Path.Combine(outputDirectory, "build-presence"), "dynamic", ComparisonProjection.BuildPresence, static node => !ReplayComparer.IsQueryOnlyNode(node), EdgeClass.Build);
+        WriteReplayProjection(dynamicCapture, Path.Combine(outputDirectory, "query-strict"), "dynamic", ComparisonProjection.QueryStrict, Normalization.IsQueryOnlyNode, EdgeClass.Query);
+        WriteReplayProjection(phase1Capture, Path.Combine(outputDirectory, "query-strict"), "phase1", ComparisonProjection.QueryStrict, Normalization.IsQueryOnlyNode, EdgeClass.Query);
+        WriteReplayProjection(dynamicCapture, Path.Combine(outputDirectory, "build-presence"), "dynamic", ComparisonProjection.BuildPresence, static node => !Normalization.IsQueryOnlyNode(node), EdgeClass.Build);
         WriteReplayProjection(staticCapture, Path.Combine(outputDirectory, "build-presence"), "static", ComparisonProjection.BuildPresence, static node => true, EdgeClass.All);
     }
 
@@ -28,7 +28,7 @@ internal static class NormalizedCaptureWriter
         EdgeClass edgeClass)
     {
         Directory.CreateDirectory(outputDirectory);
-        Dictionary<string, GraphNode> nodesById = ReplayComparer.NodesById(capture);
+        Dictionary<string, GraphNode> nodesById = Normalization.NodesById(capture);
         WriteProjection(capture, nodesById, outputDirectory, prefix, projection, nodePredicate, edgeClass);
     }
 
@@ -41,8 +41,8 @@ internal static class NormalizedCaptureWriter
         Func<GraphNode, bool> nodePredicate,
         EdgeClass edgeClass)
     {
-        HashSet<NormalizedNode> nodes = ReplayComparer.ProjectNodes(capture.Nodes.Where(nodePredicate), projection);
-        HashSet<NormalizedEdge> edges = ReplayComparer.ProjectEdges(capture.Edges, nodesById, projection, edgeClass);
+        HashSet<NormalizedNode> nodes = Normalization.ProjectNodes(capture.Nodes.Where(nodePredicate), projection);
+        HashSet<NormalizedEdge> edges = Normalization.ProjectEdges(capture.Edges, nodesById, projection, edgeClass);
         File.WriteAllLines(Path.Combine(outputDirectory, $"{name}.nodes.txt"), nodes.Select(NodeLine).OrderBy(static line => line, StringComparer.OrdinalIgnoreCase));
         File.WriteAllLines(Path.Combine(outputDirectory, $"{name}.edges.txt"), edges.Select(EdgeLine).OrderBy(static line => line, StringComparer.OrdinalIgnoreCase));
     }
@@ -71,4 +71,3 @@ internal static class NormalizedCaptureWriter
             .Replace("\n", "\\n", StringComparison.Ordinal);
 
 }
-
