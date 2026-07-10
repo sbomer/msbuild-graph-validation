@@ -1,0 +1,13 @@
+<Project DefaultTargets="Build">
+  <ItemGroup>
+    <ProjectReference Include="parent/parent.csproj"
+                      AdditionalProperties="TargetFramework=net8.0" />
+    <ProjectReferenceTargets Include="Build" Targets="Build" />
+  </ItemGroup>
+
+  <Target Name="Build">
+    <MSBuild Projects="@(ProjectReference)"
+             Targets="Build"
+             Properties="%(ProjectReference.AdditionalProperties)" />
+  </Target>
+</Project>

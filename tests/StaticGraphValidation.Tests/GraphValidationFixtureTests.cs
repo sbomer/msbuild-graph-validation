@@ -125,6 +125,28 @@ public sealed class GraphValidationFixtureTests
     }
 
     [Fact]
+    public async Task StaticGraphExpandsMultitargetedProjectReferenceBeyondRequestedParentTargetFramework()
+    {
+        (string dynamicJson, string graphBuildJson, string comparisonText) = await RunGraphBuildBinlogComparison(
+            "multitargeted-project-reference",
+            "root.proj",
+            nameof(StaticGraphExpandsMultitargetedProjectReferenceBeyondRequestedParentTargetFramework),
+            isolateProjects: true,
+            expectedComparisonExitCode: 2,
+            restoreProject: "parent/parent.csproj");
+
+        string comparison = await File.ReadAllTextAsync(comparisonText);
+        Assert.Contains("Right-only nodes: 5", comparison);
+        Assert.Contains("child/child.csproj|target=Build|globals=Restore=false;TargetFramework=net9.0", comparison);
+        Assert.Contains("child/child.csproj|target=GetCopyToOutputDirectoryItems|globals=Restore=false;TargetFramework=net9.0", comparison);
+        Assert.Contains("child/child.csproj|target=GetNativeManifest|globals=Restore=false;TargetFramework=net9.0", comparison);
+
+        Assert.Contains(("child/child.csproj", "Build", "net8.0"), CapturedTargets(dynamicJson));
+        Assert.DoesNotContain(("child/child.csproj", "Build", "net9.0"), CapturedTargets(dynamicJson));
+        Assert.Contains(("child/child.csproj", "Build", "net9.0"), CapturedTargets(graphBuildJson));
+    }
+
+    [Fact]
     public async Task SingleProjectReferenceMatchesStaticGraph()
     {
         GraphCounts counts = await RunGraphValidationFixture(
@@ -165,7 +187,8 @@ public sealed class GraphValidationFixtureTests
         string entryProject,
         string testName,
         bool isolateProjects,
-        int expectedComparisonExitCode)
+        int expectedComparisonExitCode,
+        string? restoreProject = null)
     {
         string repoRoot = FindRepoRoot();
         string fixtureRoot = Path.Combine(repoRoot, "tests", "StaticGraphValidation.Tests", "TestProjects", fixtureName);
@@ -185,9 +208,14 @@ public sealed class GraphValidationFixtureTests
         string graphBuildJson = Path.Combine(outputRoot, "graph-build.json");
         string comparisonText = Path.Combine(outputRoot, "comparison.txt");
 
-        await Run(repoRoot, "dotnet", ["msbuild", projectPath, $"/bl:{dynamicBinlog}", "/nologo", "/v:minimal"]);
+        if (restoreProject is not null)
+        {
+            await Run(repoRoot, "dotnet", ["msbuild", Path.Combine(fixtureRoot, restoreProject), "/t:Restore", "/nologo", "/v:minimal"]);
+        }
 
-        List<string> graphBuildArguments = ["msbuild", projectPath, "/graphBuild", $"/bl:{graphBuildBinlog}", "/nologo", "/v:minimal"];
+        await Run(repoRoot, "dotnet", ["msbuild", projectPath, $"/bl:{dynamicBinlog}", "/nologo", "/v:minimal", "/p:Restore=false"]);
+
+        List<string> graphBuildArguments = ["msbuild", projectPath, "/graphBuild", $"/bl:{graphBuildBinlog}", "/nologo", "/v:minimal", "/p:Restore=false"];
         if (isolateProjects)
         {
             graphBuildArguments.Insert(3, "/isolateProjects");
@@ -317,6 +345,31 @@ public sealed class GraphValidationFixtureTests
         return node.GetProperty("GlobalProperties").TryGetProperty(propertyName, out JsonElement property)
             ? property.GetString()
             : null;
+    }
+
+    private static HashSet<(string Project, string Target, string TargetFramework)> CapturedTargets(string capturePath)
+    {
+        using JsonDocument capture = JsonDocument.Parse(File.ReadAllText(capturePath));
+        HashSet<(string Project, string Target, string TargetFramework)> result = [];
+        foreach (JsonElement node in capture.RootElement.GetProperty("Nodes").EnumerateArray())
+        {
+            string project = node.GetProperty("RelativePath").GetString()!;
+            string targetFramework = node.GetProperty("GlobalProperties").TryGetProperty("TargetFramework", out JsonElement targetFrameworkElement)
+                ? targetFrameworkElement.GetString() ?? ""
+                : "";
+            string[] targets = node.GetProperty("RequestedTargets").EnumerateArray().Select(static target => target.GetString()!).ToArray();
+            if (targets.Length == 0)
+            {
+                targets = node.GetProperty("DefaultTargets").EnumerateArray().Select(static target => target.GetString()!).ToArray();
+            }
+
+            foreach (string target in targets)
+            {
+                result.Add((project, target, targetFramework));
+            }
+        }
+
+        return result;
     }
 
     private static string TargetList(params string[] targets) => string.Join(';', targets);

@@ -1,0 +1,25 @@
+<Project>
+  <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
+
+  <PropertyGroup>
+    <TargetFramework />
+    <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <ImplicitUsings>false</ImplicitUsings>
+    <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
+    <ProduceOnlyReferenceAssembly>false</ProduceOnlyReferenceAssembly>
+  </PropertyGroup>
+
+  <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+
+  <Target Name="CoreCompile">
+    <MakeDir Directories="$(TargetDir)" />
+    <MakeDir Directories="$(IntermediateOutputPath)" />
+    <MakeDir Directories="$(IntermediateOutputPath)refint" />
+    <WriteLinesToFile File="$(TargetPath)" Lines="" Overwrite="true" />
+    <WriteLinesToFile File="$(IntermediateOutputPath)$(TargetFileName)" Lines="" Overwrite="true" />
+    <WriteLinesToFile File="$(IntermediateOutputPath)refint/$(TargetFileName)" Lines="" Overwrite="true" />
+  </Target>
+</Project>
