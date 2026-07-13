@@ -180,10 +180,12 @@ public sealed class GraphValidationFixtureTests
             "dotnet",
             [
                 "msbuild",
-                Path.Combine(fixtureRoot, "root.proj"),
+                Path.Combine(fixtureRoot, "parent/parent.csproj"),
+                "/t:CaptureProjectReferencesRecursive",
                 "/nologo",
                 "/v:minimal",
                 "/p:Restore=false",
+                "/p:TargetFramework=net8.0",
                 "/p:CaptureProjectReferences=true",
                 $"/p:CaptureProjectReferencesFile={captureFile}",
                 $"/p:CustomAfterMicrosoftCommonTargets={Path.Combine(fixtureRoot, "capture-project-references.targets")}"
@@ -195,6 +197,128 @@ public sealed class GraphValidationFixtureTests
             line => line.Contains("parent/parent.csproj", StringComparison.OrdinalIgnoreCase) &&
                 line.Contains("child/child.csproj", StringComparison.OrdinalIgnoreCase) &&
                 line.Contains("TargetFramework=net8.0", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task StaticGraphCanUseCapturedProjectReferencesToConstrainTargetFrameworks()
+    {
+        string repoRoot = FindRepoRoot();
+        string fixtureRoot = Path.Combine(repoRoot, "tests", "StaticGraphValidation.Tests", "TestProjects", "multitargeted-project-reference");
+        string outputRoot = Path.Combine(repoRoot, "artifacts", "tmp", "tests", nameof(StaticGraphCanUseCapturedProjectReferencesToConstrainTargetFrameworks));
+
+        if (Directory.Exists(outputRoot))
+        {
+            Directory.Delete(outputRoot, recursive: true);
+        }
+
+        Directory.CreateDirectory(outputRoot);
+        string captureFile = Path.Combine(outputRoot, "project-references.raw.txt");
+        string replayTargets = Path.Combine(outputRoot, "project-references.replay.targets");
+        string graphBuildBinlog = Path.Combine(outputRoot, "graph-build.binlog");
+        string graphBuildJson = Path.Combine(outputRoot, "graph-build.json");
+
+        await Run(repoRoot, "dotnet", ["msbuild", Path.Combine(fixtureRoot, "parent/parent.csproj"), "/t:Restore", "/nologo", "/v:minimal"]);
+        await Run(
+            repoRoot,
+            "dotnet",
+            [
+                "msbuild",
+                Path.Combine(fixtureRoot, "parent/parent.csproj"),
+                "/t:CaptureProjectReferencesRecursive",
+                "/nologo",
+                "/v:minimal",
+                "/p:Restore=false",
+                "/p:TargetFramework=net8.0",
+                "/p:CaptureProjectReferences=true",
+                $"/p:CaptureProjectReferencesFile={captureFile}",
+                $"/p:CustomAfterMicrosoftCommonTargets={Path.Combine(fixtureRoot, "capture-project-references.targets")}"
+            ]);
+
+        string generatorProject = Path.Combine(outputRoot, "generate.proj");
+        await File.WriteAllTextAsync(generatorProject, $"""
+            <Project>
+              <Import Project="{Path.Combine(repoRoot, "targets/staticGraphTargetFrameworkSelection.targets")}" />
+            </Project>
+            """);
+
+        await Run(
+            repoRoot,
+            "dotnet",
+            [
+                "msbuild",
+                generatorProject,
+                "/t:GenerateStaticGraphSelectedTargetFrameworks",
+                "/nologo",
+                "/v:minimal",
+                $"/p:StaticGraphSelectedTargetFrameworksRawFile={captureFile}",
+                $"/p:StaticGraphSelectedTargetFrameworksTargets={replayTargets}",
+                $"/p:StaticGraphTasksAssemblyPath={StaticGraphTasksAssemblyPath(repoRoot)}"
+            ]);
+
+        Assert.Contains("TargetFrameworks>net8.0</TargetFrameworks", await File.ReadAllTextAsync(replayTargets));
+
+        await Run(repoRoot, "dotnet", ["msbuild", Path.Combine(fixtureRoot, "parent/parent.csproj"), "/t:Restore", "/nologo", "/v:minimal", $"/p:ProjectReferenceReplayTargets={replayTargets}"]);
+        await Run(
+            repoRoot,
+            "dotnet",
+            [
+                "msbuild",
+                Path.Combine(fixtureRoot, "root.proj"),
+                "/graphBuild",
+                "/isolateProjects",
+                $"/bl:{graphBuildBinlog}",
+                "/nologo",
+                "/v:minimal",
+                "/p:Restore=false",
+                $"/p:ProjectReferenceReplayTargets={replayTargets}"
+            ]);
+
+        await Run(repoRoot, "dotnet", ["run", "--no-build", "--project", Path.Combine(repoRoot, "src", "StaticGraphValidation"), "--", "dynamic", graphBuildBinlog, "--repo-root", fixtureRoot, "-o", graphBuildJson]);
+
+        Assert.Contains(("child/child.csproj", "Build", "net8.0"), CapturedTargets(graphBuildJson));
+        Assert.DoesNotContain(("child/child.csproj", "Build", "net9.0"), CapturedTargets(graphBuildJson));
+    }
+
+    [Fact]
+    public async Task StaticGraphBuildsAllTargetFrameworksForMultitargetedReferenceTree()
+    {
+        string repoRoot = FindRepoRoot();
+        string fixtureRoot = Path.Combine(repoRoot, "tests", "StaticGraphValidation.Tests", "TestProjects", "multitargeted-tree");
+        string outputRoot = Path.Combine(repoRoot, "artifacts", "tmp", "tests", nameof(StaticGraphBuildsAllTargetFrameworksForMultitargetedReferenceTree));
+
+        if (Directory.Exists(outputRoot))
+        {
+            Directory.Delete(outputRoot, recursive: true);
+        }
+
+        Directory.CreateDirectory(outputRoot);
+        string graphBuildBinlog = Path.Combine(outputRoot, "graph-build.binlog");
+        string graphBuildJson = Path.Combine(outputRoot, "graph-build.json");
+
+        await Run(repoRoot, "dotnet", ["msbuild", Path.Combine(fixtureRoot, "root/root.csproj"), "/t:Restore", "/nologo", "/v:minimal"]);
+        await Run(
+            repoRoot,
+            "dotnet",
+            [
+                "msbuild",
+                Path.Combine(fixtureRoot, "root/root.csproj"),
+                "/graphBuild",
+                "/isolateProjects",
+                $"/bl:{graphBuildBinlog}",
+                "/nologo",
+                "/v:minimal",
+                "/p:Restore=false"
+            ]);
+
+        await Run(repoRoot, "dotnet", ["run", "--no-build", "--project", Path.Combine(repoRoot, "src", "StaticGraphValidation"), "--", "dynamic", graphBuildBinlog, "--repo-root", fixtureRoot, "-o", graphBuildJson]);
+
+        HashSet<(string Project, string Target, string TargetFramework)> targets = CapturedTargets(graphBuildJson);
+        Assert.Contains(("middle/middle.csproj", "Build", "net8.0"), targets);
+        Assert.Contains(("middle/middle.csproj", "Build", "net9.0"), targets);
+        Assert.Contains(("middle/middle.csproj", "Build", "netstandard2.0"), targets);
+        Assert.Contains(("leaf/leaf.csproj", "Build", "net8.0"), targets);
+        Assert.Contains(("leaf/leaf.csproj", "Build", "net9.0"), targets);
+        Assert.Contains(("leaf/leaf.csproj", "Build", "netstandard2.0"), targets);
     }
 
     [Fact]
@@ -424,6 +548,11 @@ public sealed class GraphValidationFixtureTests
     }
 
     private static string TargetList(params string[] targets) => string.Join(';', targets);
+
+    private static string StaticGraphTasksAssemblyPath(string repoRoot) =>
+        Directory.GetFiles(Path.Combine(repoRoot, "artifacts", "bin", "StaticGraphTasks"), "StaticGraphTasks.dll", SearchOption.AllDirectories)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .First();
 
     private static string FindRepoRoot()
     {

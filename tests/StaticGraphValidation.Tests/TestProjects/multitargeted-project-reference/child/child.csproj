@@ -12,6 +12,9 @@
     <ProduceOnlyReferenceAssembly>false</ProduceOnlyReferenceAssembly>
   </PropertyGroup>
 
+  <Import Project="$(ProjectReferenceReplayTargets)"
+          Condition="'$(ProjectReferenceReplayTargets)' != '' and Exists('$(ProjectReferenceReplayTargets)')" />
+
   <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
 
   <Target Name="CoreCompile">

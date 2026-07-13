@@ -1,16 +1,34 @@
 <Project>
-  <Target Name="CaptureProjectReferences"
-          AfterTargets="_GetProjectReferenceTargetFrameworkProperties"
-          Condition="'$(CaptureProjectReferences)' == 'true' and '$(CaptureProjectReferencesFile)' != ''">
+  <Target Name="CaptureProjectReferencesRecursive"
+          DependsOnTargets="_InitializeCaptureProjectReferences;_CaptureProjectReferencesHere;_CaptureProjectReferencesChildren"
+          Condition="'$(CaptureProjectReferences)' == 'true' and '$(CaptureProjectReferencesFile)' != ''" />
+
+  <Target Name="_InitializeCaptureProjectReferences"
+          Condition="'$(_CaptureProjectReferencesInitialized)' != 'true'">
+    <MakeDir Directories="$([System.IO.Path]::GetDirectoryName('$(CaptureProjectReferencesFile)'))" />
+    <Delete Files="$(CaptureProjectReferencesFile)" />
+  </Target>
+
+  <Target Name="_CaptureProjectReferencesHere"
+          DependsOnTargets="PrepareProjectReferences;_GetProjectReferenceTargetFrameworkProperties">
     <ItemGroup>
       <_CapturedProjectReference Include="@(_MSBuildProjectReferenceExistent)">
-        <Line>$(MSBuildProjectFullPath)|%(_MSBuildProjectReferenceExistent.FullPath)|%(_MSBuildProjectReferenceExistent.SetTargetFramework)|%(_MSBuildProjectReferenceExistent.SetConfiguration)|%(_MSBuildProjectReferenceExistent.SetPlatform)|%(_MSBuildProjectReferenceExistent.UndefineProperties)|%(_MSBuildProjectReferenceExistent.GlobalPropertiesToRemove)|%(_MSBuildProjectReferenceExistent.SkipGetTargetFrameworkProperties)</Line>
+        <Line>$(MSBuildProjectFullPath)|%(_MSBuildProjectReferenceExistent.FullPath)||%(_MSBuildProjectReferenceExistent.SetTargetFramework)|%(_MSBuildProjectReferenceExistent.SetConfiguration)|%(_MSBuildProjectReferenceExistent.SetPlatform)|%(_MSBuildProjectReferenceExistent.UndefineProperties)|%(_MSBuildProjectReferenceExistent.SkipGetTargetFrameworkProperties)</Line>
       </_CapturedProjectReference>
     </ItemGroup>
 
-    <MakeDir Directories="$([System.IO.Path]::GetDirectoryName('$(CaptureProjectReferencesFile)'))" />
     <WriteLinesToFile File="$(CaptureProjectReferencesFile)"
                       Lines="@(_CapturedProjectReference->'%(Line)')"
                       Overwrite="false" />
+  </Target>
+
+  <Target Name="_CaptureProjectReferencesChildren"
+          DependsOnTargets="PrepareProjectReferences;_GetProjectReferenceTargetFrameworkProperties">
+    <MSBuild Projects="@(_MSBuildProjectReferenceExistent)"
+             Targets="CaptureProjectReferencesRecursive"
+             Properties="%(_MSBuildProjectReferenceExistent.SetTargetFramework);%(_MSBuildProjectReferenceExistent.SetConfiguration);%(_MSBuildProjectReferenceExistent.SetPlatform);CaptureProjectReferences=true;CaptureProjectReferencesFile=$(CaptureProjectReferencesFile);_CaptureProjectReferencesInitialized=true;CustomAfterMicrosoftCommonTargets=$(CustomAfterMicrosoftCommonTargets)"
+             RemoveProperties="%(_MSBuildProjectReferenceExistent.GlobalPropertiesToRemove);%(_MSBuildProjectReferenceExistent.UndefineProperties)"
+             BuildInParallel="false"
+             SkipNonexistentTargets="true" />
   </Target>
 </Project>

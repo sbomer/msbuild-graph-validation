@@ -12,6 +12,9 @@
     <ProduceOnlyReferenceAssembly>false</ProduceOnlyReferenceAssembly>
   </PropertyGroup>
 
+  <Import Project="$(ProjectReferenceReplayTargets)"
+          Condition="'$(ProjectReferenceReplayTargets)' != '' and Exists('$(ProjectReferenceReplayTargets)')" />
+
   <ItemGroup>
     <ProjectReference Include="../child/child.csproj" />
   </ItemGroup>
