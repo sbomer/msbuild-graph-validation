@@ -194,9 +194,8 @@ public sealed class GraphValidationFixtureTests
         string[] lines = await File.ReadAllLinesAsync(captureFile);
         Assert.Contains(
             lines,
-            line => line.Contains("parent/parent.csproj", StringComparison.OrdinalIgnoreCase) &&
-                line.Contains("child/child.csproj", StringComparison.OrdinalIgnoreCase) &&
-                line.Contains("TargetFramework=net8.0", StringComparison.Ordinal));
+            line => line.Contains("child/child.csproj", StringComparison.OrdinalIgnoreCase) &&
+                line.Contains("|TargetFramework=net8.0|", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -218,7 +217,7 @@ public sealed class GraphValidationFixtureTests
         string graphBuildJson = Path.Combine(outputRoot, "graph-build.json");
 
         await Run(repoRoot, "dotnet", ["msbuild", Path.Combine(fixtureRoot, "parent/parent.csproj"), "/t:Restore", "/nologo", "/v:minimal"]);
-        await Run(
+        string output = await Run(
             repoRoot,
             "dotnet",
             [
@@ -296,7 +295,7 @@ public sealed class GraphValidationFixtureTests
         string graphBuildJson = Path.Combine(outputRoot, "graph-build.json");
 
         await Run(repoRoot, "dotnet", ["msbuild", Path.Combine(fixtureRoot, "root/root.csproj"), "/t:Restore", "/nologo", "/v:minimal"]);
-        await Run(
+        string output = await Run(
             repoRoot,
             "dotnet",
             [
@@ -319,6 +318,92 @@ public sealed class GraphValidationFixtureTests
         Assert.Contains(("leaf/leaf.csproj", "Build", "net8.0"), targets);
         Assert.Contains(("leaf/leaf.csproj", "Build", "net9.0"), targets);
         Assert.Contains(("leaf/leaf.csproj", "Build", "netstandard2.0"), targets);
+    }
+
+    [Fact]
+    public async Task CaptureProjectReferencesRecordsSharedTransitiveReferenceEdges()
+    {
+        string repoRoot = FindRepoRoot();
+        string fixtureRoot = Path.Combine(repoRoot, "tests", "StaticGraphValidation.Tests", "TestProjects", "multitargeted-tree");
+        string outputRoot = Path.Combine(repoRoot, "artifacts", "tmp", "tests", nameof(CaptureProjectReferencesRecordsSharedTransitiveReferenceEdges));
+
+        if (Directory.Exists(outputRoot))
+        {
+            Directory.Delete(outputRoot, recursive: true);
+        }
+
+        Directory.CreateDirectory(outputRoot);
+        string captureFile = Path.Combine(outputRoot, "project-references.txt");
+
+        await Run(repoRoot, "dotnet", ["msbuild", Path.Combine(fixtureRoot, "root/root.csproj"), "/t:Restore", "/nologo", "/v:minimal"]);
+        await Run(
+            repoRoot,
+            "dotnet",
+            [
+                "msbuild",
+                Path.Combine(fixtureRoot, "root/root.csproj"),
+                "/t:CaptureProjectReferencesRecursive",
+                "/nologo",
+                "/v:minimal",
+                "/p:Restore=false",
+                "/p:CaptureProjectReferences=true",
+                $"/p:CaptureProjectReferencesTargets={Path.Combine(repoRoot, "tests/StaticGraphValidation.Tests/TestProjects/multitargeted-project-reference/capture-project-references.targets")}",
+                $"/p:CaptureProjectReferencesFile={captureFile}"
+            ]);
+
+        string[] lines = await File.ReadAllLinesAsync(captureFile);
+        Assert.Equal(
+            0,
+            lines.Length - lines.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        Assert.Equal(
+            2,
+            lines.Count(line => line.Contains("leaf/leaf.csproj", StringComparison.OrdinalIgnoreCase) &&
+                line.Contains("|TargetFramework=net8.0|", StringComparison.Ordinal)));
+        Assert.Equal(
+            2,
+            lines.Count(line => line.Contains("leaf/leaf.csproj", StringComparison.OrdinalIgnoreCase) &&
+                line.Contains("|TargetFramework=net9.0|", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public async Task CaptureProjectReferencesDeduplicatesReturnedItemsAtEachRecursiveStep()
+    {
+        string repoRoot = FindRepoRoot();
+        string outputRoot = Path.Combine(repoRoot, "artifacts", "tmp", "tests", nameof(CaptureProjectReferencesDeduplicatesReturnedItemsAtEachRecursiveStep));
+
+        if (Directory.Exists(outputRoot))
+        {
+            Directory.Delete(outputRoot, recursive: true);
+        }
+
+        Directory.CreateDirectory(outputRoot);
+        string fixtureRoot = Path.Combine(outputRoot, "fixture");
+        CreateDiamondFixture(fixtureRoot, depth: 5);
+
+        string captureFile = Path.Combine(outputRoot, "project-references.txt");
+        await Run(repoRoot, "dotnet", ["msbuild", Path.Combine(fixtureRoot, "root/root.csproj"), "/t:Restore", "/nologo", "/v:minimal"]);
+        string output = await Run(
+            repoRoot,
+            "dotnet",
+            [
+                "msbuild",
+                Path.Combine(fixtureRoot, "root/root.csproj"),
+                "/t:CaptureProjectReferencesRecursive",
+                "/nologo",
+                "/v:minimal",
+                "/p:Restore=false",
+                "/p:CaptureProjectReferences=true",
+                "/p:CaptureProjectReferencesLogCounts=true",
+                $"/p:CaptureProjectReferencesTargets={Path.Combine(repoRoot, "tests/StaticGraphValidation.Tests/TestProjects/multitargeted-project-reference/capture-project-references.targets")}",
+                $"/p:CaptureProjectReferencesFile={captureFile}"
+            ]);
+
+        string[] lines = await File.ReadAllLinesAsync(captureFile);
+        Assert.Equal(lines.Distinct(StringComparer.OrdinalIgnoreCase).Count(), lines.Length);
+        Assert.Equal(61, lines.Length);
+        Assert.All(
+            CaptureProjectReferencesCounts(output),
+            count => Assert.InRange(count, 0, 61));
     }
 
     [Fact]
@@ -548,6 +633,86 @@ public sealed class GraphValidationFixtureTests
     }
 
     private static string TargetList(params string[] targets) => string.Join(';', targets);
+
+    private static IEnumerable<int> CaptureProjectReferencesCounts(string output)
+    {
+        foreach (string line in output.Split(Environment.NewLine))
+        {
+            const string marker = "CaptureProjectReferencesCount ";
+            int markerIndex = line.IndexOf(marker, StringComparison.Ordinal);
+            if (markerIndex < 0)
+            {
+                continue;
+            }
+
+            int countIndex = line.IndexOf("Count=", markerIndex, StringComparison.Ordinal);
+            if (countIndex >= 0 && int.TryParse(line[(countIndex + "Count=".Length)..].Trim(), out int count))
+            {
+                yield return count;
+            }
+        }
+    }
+
+    private static void CreateDiamondFixture(string fixtureRoot, int depth)
+    {
+        Directory.CreateDirectory(fixtureRoot);
+        File.WriteAllText(
+            Path.Combine(fixtureRoot, "Directory.Build.props"),
+            $$"""
+            <Project>
+              <PropertyGroup>
+                <BaseOutputPath>{{fixtureRoot}}/bin/</BaseOutputPath>
+                <BaseIntermediateOutputPath>{{fixtureRoot}}/obj/$(MSBuildProjectName)/</BaseIntermediateOutputPath>
+              </PropertyGroup>
+            </Project>
+            """);
+
+        WriteDiamondProject(Path.Combine(fixtureRoot, "leaf", "leaf.csproj"));
+        for (int i = 0; i < 2; i++)
+        {
+            WriteDiamondProject(Path.Combine(fixtureRoot, $"l{depth}_{i}", $"l{depth}_{i}.csproj"), "../leaf/leaf.csproj");
+        }
+
+        for (int layer = depth - 1; layer >= 1; layer--)
+        {
+            for (int i = 0; i < 2; i++)
+            {
+                WriteDiamondProject(
+                    Path.Combine(fixtureRoot, $"l{layer}_{i}", $"l{layer}_{i}.csproj"),
+                    $"../l{layer + 1}_0/l{layer + 1}_0.csproj",
+                    $"../l{layer + 1}_1/l{layer + 1}_1.csproj");
+            }
+        }
+
+        WriteDiamondProject(Path.Combine(fixtureRoot, "root", "root.csproj"), "../l1_0/l1_0.csproj", "../l1_1/l1_1.csproj");
+    }
+
+    private static void WriteDiamondProject(string path, params string[] references)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        string projectReferences = string.Join(
+            Environment.NewLine,
+            references.Select(static reference => $"""    <ProjectReference Include="{reference}" />"""));
+        File.WriteAllText(
+            path,
+            $$"""
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net8.0</TargetFramework>
+                <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+                <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+                <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+                <ImplicitUsings>false</ImplicitUsings>
+                <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
+                <ProduceOnlyReferenceAssembly>false</ProduceOnlyReferenceAssembly>
+              </PropertyGroup>
+              <ItemGroup>
+            {{projectReferences}}
+              </ItemGroup>
+              <Import Project="$(CaptureProjectReferencesTargets)" Condition="'$(CaptureProjectReferencesTargets)' != '' and Exists('$(CaptureProjectReferencesTargets)')" />
+            </Project>
+            """);
+    }
 
     private static string StaticGraphTasksAssemblyPath(string repoRoot) =>
         Directory.GetFiles(Path.Combine(repoRoot, "artifacts", "bin", "StaticGraphTasks"), "StaticGraphTasks.dll", SearchOption.AllDirectories)

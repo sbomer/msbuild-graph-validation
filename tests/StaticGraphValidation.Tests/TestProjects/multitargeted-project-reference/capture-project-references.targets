@@ -1,7 +1,18 @@
 <Project>
+  <PropertyGroup>
+    <_CaptureProjectReferencesMetadataNames>ParentProject;ProjectPath;NearestTargetFramework;SetTargetFramework;SetConfiguration;SetPlatform;UndefineProperties;SkipGetTargetFrameworkProperties</_CaptureProjectReferencesMetadataNames>
+    <_GraphValidationRepoRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..', '..', '..', '..'))</_GraphValidationRepoRoot>
+    <StaticGraphTasksAssemblyPath Condition="'$(StaticGraphTasksAssemblyPath)' == ''">$([MSBuild]::NormalizePath('$(_GraphValidationRepoRoot)', 'artifacts', 'bin', 'StaticGraphTasks', 'debug', 'StaticGraphTasks.dll'))</StaticGraphTasksAssemblyPath>
+  </PropertyGroup>
+
+  <UsingTask TaskName="MSBuild.GraphValidation.Tasks.DeduplicateItems"
+             AssemblyFile="$(StaticGraphTasksAssemblyPath)"
+             Condition="'$(StaticGraphTasksAssemblyPath)' != '' and Exists('$(StaticGraphTasksAssemblyPath)')" />
+
   <Target Name="CaptureProjectReferencesRecursive"
-          DependsOnTargets="_InitializeCaptureProjectReferences;_CaptureProjectReferencesHere;_CaptureProjectReferencesChildren"
-          Condition="'$(CaptureProjectReferences)' == 'true' and '$(CaptureProjectReferencesFile)' != ''" />
+          DependsOnTargets="_InitializeCaptureProjectReferences;_CaptureProjectReferencesOuterBuild;_CaptureProjectReferencesHere;_CaptureProjectReferencesChildren;_WriteCapturedProjectReferences"
+          Condition="'$(CaptureProjectReferences)' == 'true' and '$(CaptureProjectReferencesFile)' != ''"
+          Returns="@(_CapturedProjectReference)" />
 
   <Target Name="_InitializeCaptureProjectReferences"
           Condition="'$(_CaptureProjectReferencesInitialized)' != 'true'">
@@ -9,26 +20,92 @@
     <Delete Files="$(CaptureProjectReferencesFile)" />
   </Target>
 
-  <Target Name="_CaptureProjectReferencesHere"
-          DependsOnTargets="PrepareProjectReferences;_GetProjectReferenceTargetFrameworkProperties">
+  <Target Name="_CaptureProjectReferencesOuterBuild"
+          Condition="'$(IsCrossTargetingBuild)' == 'true'">
     <ItemGroup>
-      <_CapturedProjectReference Include="@(_MSBuildProjectReferenceExistent)">
-        <Line>$(MSBuildProjectFullPath)|%(_MSBuildProjectReferenceExistent.FullPath)||%(_MSBuildProjectReferenceExistent.SetTargetFramework)|%(_MSBuildProjectReferenceExistent.SetConfiguration)|%(_MSBuildProjectReferenceExistent.SetPlatform)|%(_MSBuildProjectReferenceExistent.UndefineProperties)|%(_MSBuildProjectReferenceExistent.SkipGetTargetFrameworkProperties)</Line>
-      </_CapturedProjectReference>
+      <_CaptureProjectReferencesInnerTargetFramework Include="$(TargetFrameworks)" />
     </ItemGroup>
 
-    <WriteLinesToFile File="$(CaptureProjectReferencesFile)"
-                      Lines="@(_CapturedProjectReference->'%(Line)')"
-                      Overwrite="false" />
+    <MSBuild Projects="$(MSBuildProjectFullPath)"
+             Targets="CaptureProjectReferencesRecursive"
+             Properties="TargetFramework=%(_CaptureProjectReferencesInnerTargetFramework.Identity);CaptureProjectReferences=true;CaptureProjectReferencesFile=$(CaptureProjectReferencesFile);_CaptureProjectReferencesInitialized=true;CaptureProjectReferencesTargets=$(CaptureProjectReferencesTargets)"
+             RemoveProperties="TargetFrameworks"
+             BuildInParallel="false"
+             SkipNonexistentTargets="true">
+      <Output TaskParameter="TargetOutputs"
+              ItemName="_CapturedProjectReference" />
+    </MSBuild>
+    <MSBuild.GraphValidation.Tasks.DeduplicateItems Items="@(_CapturedProjectReference)"
+                                                    MetadataNames="$(_CaptureProjectReferencesMetadataNames)"
+                                                    Condition="'@(_CapturedProjectReference)' != '' and '$(StaticGraphTasksAssemblyPath)' != '' and Exists('$(StaticGraphTasksAssemblyPath)')">
+      <Output TaskParameter="DeduplicatedItems"
+              ItemName="_CapturedProjectReferenceDedup" />
+    </MSBuild.GraphValidation.Tasks.DeduplicateItems>
+    <ItemGroup Condition="'@(_CapturedProjectReferenceDedup)' != ''">
+      <_CapturedProjectReference Remove="@(_CapturedProjectReference)" />
+      <_CapturedProjectReference Include="@(_CapturedProjectReferenceDedup)" />
+      <_CapturedProjectReferenceDedup Remove="@(_CapturedProjectReferenceDedup)" />
+    </ItemGroup>
+    <Message Importance="High"
+             Text="CaptureProjectReferencesCount Project=$(MSBuildProjectFullPath) TargetFramework=$(TargetFramework) Count=@(_CapturedProjectReference->Count())"
+             Condition="'$(CaptureProjectReferencesLogCounts)' == 'true'" />
+  </Target>
+
+  <Target Name="_CaptureProjectReferencesHere"
+          DependsOnTargets="PrepareProjectReferences;_GetProjectReferenceTargetFrameworkProperties"
+          Condition="'$(IsCrossTargetingBuild)' != 'true'">
+    <ItemGroup>
+      <_CapturedProjectReference Include="@(_MSBuildProjectReferenceExistent)">
+        <ParentProject>$(MSBuildProjectFullPath)</ParentProject>
+        <ProjectPath>%(_MSBuildProjectReferenceExistent.FullPath)</ProjectPath>
+        <NearestTargetFramework></NearestTargetFramework>
+        <SetTargetFramework>%(_MSBuildProjectReferenceExistent.SetTargetFramework)</SetTargetFramework>
+        <SetConfiguration>%(_MSBuildProjectReferenceExistent.SetConfiguration)</SetConfiguration>
+        <SetPlatform>%(_MSBuildProjectReferenceExistent.SetPlatform)</SetPlatform>
+        <UndefineProperties>%(_MSBuildProjectReferenceExistent.UndefineProperties)</UndefineProperties>
+        <SkipGetTargetFrameworkProperties>%(_MSBuildProjectReferenceExistent.SkipGetTargetFrameworkProperties)</SkipGetTargetFrameworkProperties>
+      </_CapturedProjectReference>
+    </ItemGroup>
   </Target>
 
   <Target Name="_CaptureProjectReferencesChildren"
-          DependsOnTargets="PrepareProjectReferences;_GetProjectReferenceTargetFrameworkProperties">
+          DependsOnTargets="PrepareProjectReferences;_GetProjectReferenceTargetFrameworkProperties"
+          Condition="'$(IsCrossTargetingBuild)' != 'true'">
+    <!-- TODO: This is still edge/path traversal. In diamond graphs, the same
+         project+global-properties+target can be invoked more than once through
+         different parents. The final write de-duplicates edge-level
+         ParentProject|ProjectPath|... records, but intermediate TargetOutputs
+         can still grow with the number of paths. Add a node-level visited/cache
+         mechanism before using this on large graphs. -->
     <MSBuild Projects="@(_MSBuildProjectReferenceExistent)"
              Targets="CaptureProjectReferencesRecursive"
-             Properties="%(_MSBuildProjectReferenceExistent.SetTargetFramework);%(_MSBuildProjectReferenceExistent.SetConfiguration);%(_MSBuildProjectReferenceExistent.SetPlatform);CaptureProjectReferences=true;CaptureProjectReferencesFile=$(CaptureProjectReferencesFile);_CaptureProjectReferencesInitialized=true;CustomAfterMicrosoftCommonTargets=$(CustomAfterMicrosoftCommonTargets)"
+             Properties="%(_MSBuildProjectReferenceExistent.SetTargetFramework);%(_MSBuildProjectReferenceExistent.SetConfiguration);%(_MSBuildProjectReferenceExistent.SetPlatform);CaptureProjectReferences=true;CaptureProjectReferencesFile=$(CaptureProjectReferencesFile);_CaptureProjectReferencesInitialized=true;CaptureProjectReferencesTargets=$(CaptureProjectReferencesTargets);CustomAfterMicrosoftCommonTargets=$(CustomAfterMicrosoftCommonTargets)"
              RemoveProperties="%(_MSBuildProjectReferenceExistent.GlobalPropertiesToRemove);%(_MSBuildProjectReferenceExistent.UndefineProperties)"
              BuildInParallel="false"
-             SkipNonexistentTargets="true" />
+             SkipNonexistentTargets="true">
+      <Output TaskParameter="TargetOutputs"
+              ItemName="_CapturedProjectReference" />
+    </MSBuild>
+    <MSBuild.GraphValidation.Tasks.DeduplicateItems Items="@(_CapturedProjectReference)"
+                                                    MetadataNames="$(_CaptureProjectReferencesMetadataNames)"
+                                                    Condition="'@(_CapturedProjectReference)' != '' and '$(StaticGraphTasksAssemblyPath)' != '' and Exists('$(StaticGraphTasksAssemblyPath)')">
+      <Output TaskParameter="DeduplicatedItems"
+              ItemName="_CapturedProjectReferenceDedup" />
+    </MSBuild.GraphValidation.Tasks.DeduplicateItems>
+    <ItemGroup Condition="'@(_CapturedProjectReferenceDedup)' != ''">
+      <_CapturedProjectReference Remove="@(_CapturedProjectReference)" />
+      <_CapturedProjectReference Include="@(_CapturedProjectReferenceDedup)" />
+      <_CapturedProjectReferenceDedup Remove="@(_CapturedProjectReferenceDedup)" />
+    </ItemGroup>
+    <Message Importance="High"
+             Text="CaptureProjectReferencesCount Project=$(MSBuildProjectFullPath) TargetFramework=$(TargetFramework) Count=@(_CapturedProjectReference->Count())"
+             Condition="'$(CaptureProjectReferencesLogCounts)' == 'true'" />
+  </Target>
+
+  <Target Name="_WriteCapturedProjectReferences"
+          Condition="'$(_CaptureProjectReferencesInitialized)' != 'true'">
+    <WriteLinesToFile File="$(CaptureProjectReferencesFile)"
+                      Lines="@(_CapturedProjectReference->'%(ParentProject)|%(ProjectPath)|%(NearestTargetFramework)|%(SetTargetFramework)|%(SetConfiguration)|%(SetPlatform)|%(UndefineProperties)|%(SkipGetTargetFrameworkProperties)'->Distinct())"
+                      Overwrite="true" />
   </Target>
 </Project>

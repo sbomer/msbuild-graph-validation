@@ -13,6 +13,10 @@
   </PropertyGroup>
 
   <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+  <Import Project="$(CaptureProjectReferencesTargets)"
+          Condition="'$(CaptureProjectReferencesTargets)' != '' and Exists('$(CaptureProjectReferencesTargets)')" />
+  <Import Project="$(ProjectReferenceReplayTargets)"
+          Condition="'$(ProjectReferenceReplayTargets)' != '' and Exists('$(ProjectReferenceReplayTargets)')" />
 
   <Target Name="CoreCompile">
     <MakeDir Directories="$(TargetDir)" />

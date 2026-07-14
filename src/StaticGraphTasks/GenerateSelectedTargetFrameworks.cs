@@ -37,6 +37,12 @@ public sealed class GenerateSelectedTargetFrameworks : Microsoft.Build.Utilities
         foreach (string line in File.ReadLines(rawSelectionFile))
         {
             string[] parts = line.Split('|');
+            if (parts.Length == 2)
+            {
+                AddSelectedTargetFramework(selectedFrameworksByProject, parts[0], parts[1]);
+                continue;
+            }
+
             if (parts.Length != 8)
             {
                 Log.LogWarning($"Ignoring malformed selected target framework line: {line}");
@@ -66,25 +72,7 @@ public sealed class GenerateSelectedTargetFrameworks : Microsoft.Build.Utilities
 
             selectedProjectReferences.Add(projectPath);
 
-            if (string.IsNullOrWhiteSpace(setTargetFramework))
-            {
-                continue;
-            }
-
-            string[] property = setTargetFramework.Split('=', count: 2);
-            if (property.Length != 2 || !string.Equals(property[0], "TargetFramework", StringComparison.OrdinalIgnoreCase))
-            {
-                Log.LogWarning($"Ignoring unsupported SetTargetFramework metadata '{setTargetFramework}' for '{projectPath}'.");
-                continue;
-            }
-
-            if (!selectedFrameworksByProject.TryGetValue(projectPath, out SortedSet<string>? frameworks))
-            {
-                frameworks = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
-                selectedFrameworksByProject.Add(projectPath, frameworks);
-            }
-
-            frameworks.Add(property[1]);
+            AddSelectedTargetFramework(selectedFrameworksByProject, projectPath, setTargetFramework);
         }
 
         string? outputDirectory = Path.GetDirectoryName(outputFile);
@@ -148,5 +136,31 @@ public sealed class GenerateSelectedTargetFrameworks : Microsoft.Build.Utilities
 
         Log.LogMessage(MessageImportance.High, $"Wrote {selectedFrameworksByProject.Count} selected target framework entries and {allowListParentProjects.Count} project reference allow-lists to '{outputFile}'.");
         return !Log.HasLoggedErrors;
+    }
+
+    private void AddSelectedTargetFramework(
+        SortedDictionary<string, SortedSet<string>> selectedFrameworksByProject,
+        string projectPath,
+        string setTargetFramework)
+    {
+        if (string.IsNullOrWhiteSpace(projectPath) || string.IsNullOrWhiteSpace(setTargetFramework))
+        {
+            return;
+        }
+
+        string[] property = setTargetFramework.Split('=', count: 2);
+        if (property.Length != 2 || !string.Equals(property[0], "TargetFramework", StringComparison.OrdinalIgnoreCase))
+        {
+            Log.LogWarning($"Ignoring unsupported SetTargetFramework metadata '{setTargetFramework}' for '{projectPath}'.");
+            return;
+        }
+
+        if (!selectedFrameworksByProject.TryGetValue(projectPath, out SortedSet<string>? frameworks))
+        {
+            frameworks = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+            selectedFrameworksByProject.Add(projectPath, frameworks);
+        }
+
+        frameworks.Add(property[1]);
     }
 }
