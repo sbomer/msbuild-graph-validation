@@ -37,9 +37,9 @@ public sealed class GenerateSelectedTargetFrameworks : Microsoft.Build.Utilities
         foreach (string line in File.ReadLines(rawSelectionFile))
         {
             string[] parts = line.Split('|');
-            if (parts.Length == 2)
+            if (parts.Length == 4)
             {
-                AddSelectedTargetFramework(selectedFrameworksByProject, parts[0], parts[1]);
+                AddSelectedTargetFramework(selectedFrameworksByProject, parts[2], parts[3]);
                 continue;
             }
 

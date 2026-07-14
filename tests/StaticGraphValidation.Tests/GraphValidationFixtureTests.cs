@@ -195,7 +195,7 @@ public sealed class GraphValidationFixtureTests
         Assert.Contains(
             lines,
             line => line.Contains("child/child.csproj", StringComparison.OrdinalIgnoreCase) &&
-                line.Contains("|TargetFramework=net8.0|", StringComparison.Ordinal));
+                line.EndsWith("|TargetFramework=net8.0", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -358,11 +358,11 @@ public sealed class GraphValidationFixtureTests
         Assert.Equal(
             2,
             lines.Count(line => line.Contains("leaf/leaf.csproj", StringComparison.OrdinalIgnoreCase) &&
-                line.Contains("|TargetFramework=net8.0|", StringComparison.Ordinal)));
+                line.EndsWith("|TargetFramework=net8.0", StringComparison.Ordinal)));
         Assert.Equal(
             2,
             lines.Count(line => line.Contains("leaf/leaf.csproj", StringComparison.OrdinalIgnoreCase) &&
-                line.Contains("|TargetFramework=net9.0|", StringComparison.Ordinal)));
+                line.EndsWith("|TargetFramework=net9.0", StringComparison.Ordinal)));
     }
 
     [Fact]
@@ -378,7 +378,7 @@ public sealed class GraphValidationFixtureTests
 
         Directory.CreateDirectory(outputRoot);
         string fixtureRoot = Path.Combine(outputRoot, "fixture");
-        CreateDiamondFixture(fixtureRoot, depth: 5);
+        CreateDiamondFixture(fixtureRoot, depth: 24);
 
         string captureFile = Path.Combine(outputRoot, "project-references.txt");
         await Run(repoRoot, "dotnet", ["msbuild", Path.Combine(fixtureRoot, "root/root.csproj"), "/t:Restore", "/nologo", "/v:minimal"]);
@@ -400,10 +400,10 @@ public sealed class GraphValidationFixtureTests
 
         string[] lines = await File.ReadAllLinesAsync(captureFile);
         Assert.Equal(lines.Distinct(StringComparer.OrdinalIgnoreCase).Count(), lines.Length);
-        Assert.Equal(61, lines.Length);
+        Assert.Equal(1201, lines.Length);
         Assert.All(
             CaptureProjectReferencesCounts(output),
-            count => Assert.InRange(count, 0, 61));
+            count => Assert.InRange(count, 0, 1201));
     }
 
     [Fact]
