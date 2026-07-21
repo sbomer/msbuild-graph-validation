@@ -35,17 +35,17 @@ internal static class NormalizedCaptureWriter
         {
             yield return $"Project: {Escape(projectGroup.Key)}";
 
-            foreach (IGrouping<string, NormalizedNode> targetGroup in projectGroup
-                .GroupBy(static node => node.Target)
+            foreach (IGrouping<string, NormalizedNode> globalPropertiesGroup in projectGroup
+                .GroupBy(static node => string.Join(';', node.GlobalProperties.Select(static pair => $"{pair.Key}={pair.Value}")))
                 .OrderBy(static group => group.Key, StringComparer.OrdinalIgnoreCase))
             {
-                yield return $"  Target: {Escape(targetGroup.Key)}";
+                yield return $"  Globals: {Escape(globalPropertiesGroup.Key)}";
 
-                foreach (string properties in targetGroup
-                    .Select(static node => string.Join(';', node.GlobalProperties.Select(static pair => $"{pair.Key}={pair.Value}")))
+                foreach (string target in globalPropertiesGroup
+                    .Select(static node => node.Target)
                     .OrderBy(static line => line, StringComparer.OrdinalIgnoreCase))
                 {
-                    yield return $"    Globals: {Escape(properties)}";
+                    yield return $"    Target: {Escape(target)}";
                 }
             }
         }
