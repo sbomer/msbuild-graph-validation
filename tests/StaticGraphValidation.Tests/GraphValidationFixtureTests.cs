@@ -204,15 +204,22 @@ public sealed class GraphValidationFixtureTests
         string repoRoot = FindRepoRoot();
         string fixtureRoot = Path.Combine(repoRoot, "tests", "StaticGraphValidation.Tests", "TestProjects", "multitargeted-project-reference");
         string outputRoot = Path.Combine(repoRoot, "artifacts", "tmp", "tests", nameof(StaticGraphCanUseCapturedProjectReferencesToConstrainTargetFrameworks));
+        string replayRoot = Path.Combine(repoRoot, "artifacts", "obj", "static-graph", "tests", nameof(StaticGraphCanUseCapturedProjectReferencesToConstrainTargetFrameworks));
 
         if (Directory.Exists(outputRoot))
         {
             Directory.Delete(outputRoot, recursive: true);
         }
 
+        if (Directory.Exists(replayRoot))
+        {
+            Directory.Delete(replayRoot, recursive: true);
+        }
+
         Directory.CreateDirectory(outputRoot);
-        string captureFile = Path.Combine(outputRoot, "project-references.raw.txt");
-        string replayTargets = Path.Combine(outputRoot, "project-references.replay.targets");
+        Directory.CreateDirectory(replayRoot);
+        string captureFile = Path.Combine(replayRoot, "project-references.raw.txt");
+        string replayTargets = Path.Combine(replayRoot, "project-references.replay.targets");
         string graphBuildBinlog = Path.Combine(outputRoot, "graph-build.binlog");
         string graphBuildJson = Path.Combine(outputRoot, "graph-build.json");
 
@@ -233,7 +240,7 @@ public sealed class GraphValidationFixtureTests
                 $"/p:CustomAfterMicrosoftCommonTargets={Path.Combine(fixtureRoot, "capture-project-references.targets")}"
             ]);
 
-        string generatorProject = Path.Combine(outputRoot, "generate.proj");
+        string generatorProject = Path.Combine(replayRoot, "generate.proj");
         await File.WriteAllTextAsync(generatorProject, $"""
             <Project>
               <Import Project="{Path.Combine(repoRoot, "targets/staticGraphTargetFrameworkSelection.targets")}" />
