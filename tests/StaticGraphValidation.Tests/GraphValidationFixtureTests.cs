@@ -160,6 +160,60 @@ public sealed class GraphValidationFixtureTests
     }
 
     [Fact]
+    public async Task ExplicitSetTargetFrameworkIsCapturedButStaticGraphStillCreatesOuterBuild()
+    {
+        string repoRoot = FindRepoRoot();
+        string fixtureRoot = Path.Combine(repoRoot, "tests", "StaticGraphValidation.Tests", "TestProjects", "multitargeted-project-reference");
+        string projectPath = Path.Combine(fixtureRoot, "explicit/explicit.csproj");
+        string outputRoot = Path.Combine(repoRoot, "artifacts", "tmp", "tests", nameof(ExplicitSetTargetFrameworkIsCapturedButStaticGraphStillCreatesOuterBuild));
+
+        if (Directory.Exists(outputRoot))
+        {
+            Directory.Delete(outputRoot, recursive: true);
+        }
+
+        Directory.CreateDirectory(outputRoot);
+        string captureFile = Path.Combine(outputRoot, "project-references.txt");
+
+        await Run(repoRoot, "dotnet", ["msbuild", projectPath, "/t:Restore", "/nologo", "/v:minimal"]);
+        await Run(
+            repoRoot,
+            "dotnet",
+            [
+                "msbuild",
+                projectPath,
+                "/t:CaptureProjectReferencesRecursive",
+                "/nologo",
+                "/v:minimal",
+                "/p:Restore=false",
+                "/p:CaptureProjectReferences=true",
+                $"/p:CaptureProjectReferencesFile={captureFile}",
+                $"/p:CustomAfterMicrosoftCommonTargets={Path.Combine(fixtureRoot, "capture-project-references.targets")}"
+            ]);
+
+        Assert.Contains(
+            await File.ReadAllLinesAsync(captureFile),
+            line => line.Contains("child/child.csproj", StringComparison.OrdinalIgnoreCase) &&
+                line.EndsWith("|TargetFramework=net8.0", StringComparison.Ordinal));
+
+        (string dynamicJson, string staticJson, _) = await RunGraphValidationFixture(
+            "multitargeted-project-reference",
+            "explicit/explicit.csproj",
+            nameof(ExplicitSetTargetFrameworkIsCapturedButStaticGraphStillCreatesOuterBuild),
+            dynamicEntryTargets: ["Build"],
+            staticEntryTargets: ["Build"],
+            expectedComparisonExitCode: 2);
+
+        HashSet<(string Project, string Target, string TargetFramework)> dynamicTargets = CapturedTargets(dynamicJson);
+        HashSet<(string Project, string Target, string TargetFramework)> staticTargets = CapturedTargets(staticJson);
+
+        Assert.Contains(("child/child.csproj", "Build", "net8.0"), dynamicTargets);
+        Assert.DoesNotContain(("child/child.csproj", "GetTargetFrameworks", ""), dynamicTargets);
+        Assert.Contains(("child/child.csproj", "Build", "net8.0"), staticTargets);
+        Assert.Contains(("child/child.csproj", "GetTargetFrameworks", ""), staticTargets);
+    }
+
+    [Fact]
     public async Task CaptureProjectReferencesRecordsSdkSelectedTargetFramework()
     {
         string repoRoot = FindRepoRoot();
