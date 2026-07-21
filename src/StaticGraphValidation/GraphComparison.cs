@@ -6,6 +6,8 @@ internal sealed record GraphComparison
     public int RightEdgeCount { get; init; }
     public int LeftNormalizedNodeCount { get; init; }
     public int RightNormalizedNodeCount { get; init; }
+    public int LeftEvaluatedProjectInstanceCount { get; init; }
+    public int RightEvaluatedProjectInstanceCount { get; init; }
     public int LeftNormalizedEdgeCount { get; init; }
     public int RightNormalizedEdgeCount { get; init; }
     public IReadOnlyList<NormalizedNode> LeftOnlyNodes { get; init; } = [];

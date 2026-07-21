@@ -17,6 +17,22 @@ internal static class Normalization
         return normalizedNodes;
     }
 
+    public static HashSet<EvaluatedProjectInstance> ProjectInstances(IEnumerable<GraphNode> nodes)
+    {
+        HashSet<EvaluatedProjectInstance> instances = new(EvaluatedProjectInstanceComparer.Instance);
+        foreach (GraphNode node in nodes)
+        {
+            instances.Add(ToEvaluatedProjectInstance(node));
+        }
+
+        return instances;
+    }
+
+    private static EvaluatedProjectInstance ToEvaluatedProjectInstance(GraphNode node) =>
+        new(
+            Path.GetFullPath(node.ProjectPath).Replace('\\', '/'),
+            NormalizedGlobalProperties(node));
+
     public static IReadOnlyList<NormalizedNode> ToNormalizedNodes(GraphNode node)
     {
         string projectPath = Path.GetFullPath(node.ProjectPath).Replace('\\', '/');
@@ -26,10 +42,15 @@ internal static class Normalization
         // Graph builds may schedule A;B together while dynamic builds request A and B
         // separately. Target results are what downstream MSBuild tasks consume, so split
         // multi-target requests into one normalized node per effective target.
-        IReadOnlyList<string> targets = EffectiveRequestedTargets(node);
-        if (targets.Count == 0)
+        IReadOnlyList<string> effectiveTargets = EffectiveRequestedTargets(node);
+        string[] targets = effectiveTargets
+            .Where(static target => !IsIgnoredTarget(target))
+            .ToArray();
+        if (targets.Length == 0)
         {
-            return [new NormalizedNode(projectPath, "", globalProperties)];
+            return effectiveTargets.Count == 0
+                ? [new NormalizedNode(projectPath, "", globalProperties)]
+                : [];
         }
 
         return targets
@@ -65,11 +86,24 @@ internal static class Normalization
     private static IReadOnlyList<string> EffectiveRequestedTargets(GraphNode node) =>
         node.RequestedTargets.Count > 0 ? node.RequestedTargets : node.DefaultTargets;
 
+    private static bool IsIgnoredTarget(string target) =>
+        // TODO: Keep this out of the main diff but report ignored-target
+        // differences separately. Fully filtering it can hide a real mismatch
+        // if this query target is the only differing target for a project
+        // instance, even though replay-pruned TFMs make many such differences
+        // expected.
+        target.Equals("GetTargetFrameworksWithPlatformForSingleTargetFramework", StringComparison.OrdinalIgnoreCase);
+
     private static IReadOnlyDictionary<string, string> NormalizedGlobalProperties(GraphNode node) =>
         node.GlobalProperties
-            .Where(static pair => !pair.Key.Equals("IsGraphBuild", StringComparison.OrdinalIgnoreCase))
+            .Where(static pair => !IsIgnoredGlobalProperty(pair.Key))
             .OrderBy(static pair => pair.Key, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(static pair => pair.Key, static pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+
+    private static bool IsIgnoredGlobalProperty(string name) =>
+        name.Equals("IsGraphBuild", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("ProjectReferenceReplayTargets", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("UseProjectReferenceReplay", StringComparison.OrdinalIgnoreCase);
 }
 
 internal sealed record NormalizedNode(
@@ -81,6 +115,32 @@ internal sealed record NormalizedNode(
 
     public string ToIdentityString() =>
         $"{ProjectPath}|target={Target}|globals={string.Join(';', GlobalProperties.Select(static pair => $"{pair.Key}={pair.Value}"))}";
+}
+
+internal sealed record EvaluatedProjectInstance(
+    string ProjectPath,
+    IReadOnlyDictionary<string, string> GlobalProperties);
+
+internal sealed class EvaluatedProjectInstanceComparer : IEqualityComparer<EvaluatedProjectInstance>
+{
+    public static EvaluatedProjectInstanceComparer Instance { get; } = new();
+
+    public bool Equals(EvaluatedProjectInstance? x, EvaluatedProjectInstance? y) =>
+        x is not null &&
+        y is not null &&
+        StringComparer.OrdinalIgnoreCase.Equals(x.ProjectPath, y.ProjectPath) &&
+        DictionaryEquals(x.GlobalProperties, y.GlobalProperties);
+
+    public int GetHashCode(EvaluatedProjectInstance obj) =>
+        HashCode.Combine(
+            StringComparer.OrdinalIgnoreCase.GetHashCode(obj.ProjectPath),
+            DictionaryHashCode(obj.GlobalProperties));
+
+    private static bool DictionaryEquals(IReadOnlyDictionary<string, string> left, IReadOnlyDictionary<string, string> right) =>
+        NormalizedNodeComparer.DictionaryEquals(left, right);
+
+    private static int DictionaryHashCode(IReadOnlyDictionary<string, string> properties) =>
+        NormalizedNodeComparer.DictionaryHashCode(properties);
 }
 
 internal sealed record NormalizedEdge(NormalizedNode From, NormalizedNode To)
@@ -105,7 +165,7 @@ internal sealed class NormalizedNodeComparer : IEqualityComparer<NormalizedNode>
             StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Target),
             DictionaryHashCode(obj.GlobalProperties));
 
-    private static bool DictionaryEquals(IReadOnlyDictionary<string, string> left, IReadOnlyDictionary<string, string> right)
+    internal static bool DictionaryEquals(IReadOnlyDictionary<string, string> left, IReadOnlyDictionary<string, string> right)
     {
         if (left.Count != right.Count)
         {
@@ -124,7 +184,7 @@ internal sealed class NormalizedNodeComparer : IEqualityComparer<NormalizedNode>
         return true;
     }
 
-    private static int DictionaryHashCode(IReadOnlyDictionary<string, string> properties)
+    internal static int DictionaryHashCode(IReadOnlyDictionary<string, string> properties)
     {
         HashCode hashCode = new();
         foreach ((string key, string value) in properties.OrderBy(static pair => pair.Key, StringComparer.OrdinalIgnoreCase))

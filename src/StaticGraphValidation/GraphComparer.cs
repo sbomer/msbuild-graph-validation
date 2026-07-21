@@ -9,6 +9,8 @@ internal static class GraphComparer
 
         HashSet<NormalizedNode> leftNodes = Normalization.ProjectNodes(left.Nodes);
         HashSet<NormalizedNode> rightNodes = Normalization.ProjectNodes(right.Nodes);
+        HashSet<EvaluatedProjectInstance> leftInstances = Normalization.ProjectInstances(left.Nodes);
+        HashSet<EvaluatedProjectInstance> rightInstances = Normalization.ProjectInstances(right.Nodes);
         HashSet<NormalizedEdge> leftEdges = Normalization.ProjectEdges(left.Edges, leftNodesById);
         HashSet<NormalizedEdge> rightEdges = Normalization.ProjectEdges(right.Edges, rightNodesById);
 
@@ -20,6 +22,8 @@ internal static class GraphComparer
             RightEdgeCount = right.Edges.Count,
             LeftNormalizedNodeCount = leftNodes.Count,
             RightNormalizedNodeCount = rightNodes.Count,
+            LeftEvaluatedProjectInstanceCount = leftInstances.Count,
+            RightEvaluatedProjectInstanceCount = rightInstances.Count,
             LeftNormalizedEdgeCount = leftEdges.Count,
             RightNormalizedEdgeCount = rightEdges.Count,
             LeftOnlyNodes = Except(leftNodes, rightNodes),

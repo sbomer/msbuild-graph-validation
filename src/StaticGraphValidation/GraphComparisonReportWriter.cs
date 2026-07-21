@@ -13,6 +13,8 @@ internal static class GraphComparisonReportWriter
         writer.WriteLine($"  right: {comparison.RightEdgeCount}");
         writer.WriteLine();
         writer.WriteLine("Normalized counts:");
+        writer.WriteLine($"  left evaluated project instances: {comparison.LeftEvaluatedProjectInstanceCount}");
+        writer.WriteLine($"  right evaluated project instances: {comparison.RightEvaluatedProjectInstanceCount}");
         writer.WriteLine($"  left nodes: {comparison.LeftNormalizedNodeCount}");
         writer.WriteLine($"  right nodes: {comparison.RightNormalizedNodeCount}");
         writer.WriteLine($"  left edges: {comparison.LeftNormalizedEdgeCount}");

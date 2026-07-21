@@ -66,11 +66,18 @@ The current ignored global properties are:
 
 ```text
 IsGraphBuild
+ProjectReferenceReplayTargets
+UseProjectReferenceReplay
 ```
 
 `IsGraphBuild` is ignored because it is an expected difference between normal
 and graph builds and does not represent a user-requested project instance
-difference.
+difference. The replay properties are ignored because they configure the
+validation mechanism rather than the evaluated project instance being compared.
+
+The target `GetTargetFrameworksWithPlatformForSingleTargetFramework` is also
+currently excluded because replay-pruned target frameworks can produce expected
+differences in this query target.
 
 No other property whitelist is applied. Properties such as `Configuration`,
 `TargetFramework`, `RuntimeIdentifier`, `Platform`, `PackageTargetRuntime`, and
@@ -88,6 +95,17 @@ NormalizedFromNode + NormalizedToNode
 Because multi-target nodes are split into per-target nodes, edges involving a
 multi-target project invocation become the cross-product of normalized source
 and target result nodes.
+
+## Evaluated project instance counts
+
+The comparison report separately counts evaluated project instances using:
+
+```text
+ProjectPath + GlobalProperties
+```
+
+This count does not include targets, so it remains useful when target-result
+nodes are filtered or split during normalization.
 
 ## Text output
 
