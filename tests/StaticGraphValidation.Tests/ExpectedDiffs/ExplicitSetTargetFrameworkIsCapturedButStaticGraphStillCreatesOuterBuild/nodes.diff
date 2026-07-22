@@ -1,0 +1,19 @@
+--- dynamic-normalized/nodes.txt
++++ static-normalized/nodes.txt
+@@ -1,8 +1,16 @@
+ Project: child/child.csproj
++  Globals:
++    Target: GetTargetFrameworks
+   Globals: TargetFramework=net8.0
+     Target: Build
+     Target: GetCopyToOutputDirectoryItems
+     Target: GetNativeManifest
++    Target: GetTargetFrameworks
++  Globals: TargetFramework=net9.0
++    Target: Build
++    Target: GetCopyToOutputDirectoryItems
++    Target: GetNativeManifest
++    Target: GetTargetFrameworks
+ Project: explicit/explicit.csproj
+   Globals:
+     Target: Build

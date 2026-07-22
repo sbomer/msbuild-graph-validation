@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using Xunit;
 
@@ -7,6 +8,7 @@ namespace StaticGraphValidation.Tests;
 public sealed class GraphValidationFixtureTests
 {
     private sealed record GraphCounts(int DynamicNodes, int DynamicEdges, int StaticNodes, int StaticEdges);
+    private sealed record DiffLine(char Prefix, string Text);
 
     [Fact]
     public async Task SingleProjectWithNoProjectReferencesExplicitBuildMatchesStaticGraph()
@@ -546,6 +548,15 @@ public sealed class GraphValidationFixtureTests
         await Run(repoRoot, "dotnet", ["run", "--no-build", "--project", Path.Combine(repoRoot, "src", "StaticGraphValidation"), "--", "dynamic", dynamicBinlog, "--repo-root", fixtureRoot, "-o", dynamicJson]);
         await Run(repoRoot, "dotnet", ["run", "--no-build", "--project", Path.Combine(repoRoot, "src", "StaticGraphValidation"), "--", "dynamic", graphBuildBinlog, "--repo-root", fixtureRoot, "-o", graphBuildJson]);
         await Run(repoRoot, "dotnet", ["run", "--no-build", "--project", Path.Combine(repoRoot, "src", "StaticGraphValidation"), "--", "compare", "--left", dynamicJson, "--right", graphBuildJson, "-o", comparisonText], expectedComparisonExitCode);
+        await WriteAndVerifyExpectedDiffs(
+            repoRoot,
+            fixtureRoot,
+            testName,
+            outputRoot,
+            dynamicJson,
+            "dynamic",
+            graphBuildJson,
+            "graph-build");
 
         return (dynamicJson, graphBuildJson, comparisonText);
     }
@@ -618,9 +629,166 @@ public sealed class GraphValidationFixtureTests
         await Run(repoRoot, "dotnet", staticArguments);
 
         await Run(repoRoot, "dotnet", ["run", "--no-build", "--project", Path.Combine(repoRoot, "src", "StaticGraphValidation"), "--", "compare", "--left", dynamicJson, "--right", staticJson, "-o", comparisonText], expectedComparisonExitCode);
+        await WriteAndVerifyExpectedDiffs(
+            repoRoot,
+            fixtureRoot,
+            testName,
+            outputRoot,
+            dynamicJson,
+            "dynamic",
+            staticJson,
+            "static");
 
         return (dynamicJson, staticJson, comparisonText);
     }
+
+    private static async Task WriteAndVerifyExpectedDiffs(
+        string repoRoot,
+        string fixtureRoot,
+        string testName,
+        string outputRoot,
+        string leftCapture,
+        string leftName,
+        string rightCapture,
+        string rightName)
+    {
+        string leftNormalized = Path.Combine(outputRoot, $"{leftName}-normalized");
+        string rightNormalized = Path.Combine(outputRoot, $"{rightName}-normalized");
+
+        await Run(
+            repoRoot,
+            "dotnet",
+            [
+                "run",
+                "--no-build",
+                "--project",
+                Path.Combine(repoRoot, "src", "StaticGraphValidation"),
+                "--",
+                "normalize",
+                leftCapture,
+                "--repo-root",
+                fixtureRoot,
+                "--output-dir",
+                leftNormalized
+            ]);
+        await Run(
+            repoRoot,
+            "dotnet",
+            [
+                "run",
+                "--no-build",
+                "--project",
+                Path.Combine(repoRoot, "src", "StaticGraphValidation"),
+                "--",
+                "normalize",
+                rightCapture,
+                "--repo-root",
+                fixtureRoot,
+                "--output-dir",
+                rightNormalized
+            ]);
+
+        foreach (string fileName in new[] { "nodes.txt", "edges.txt" })
+        {
+            string actualDiffPath = Path.Combine(outputRoot, Path.ChangeExtension(fileName, ".diff"));
+            string actualDiff = CreateDiff(
+                await File.ReadAllLinesAsync(Path.Combine(leftNormalized, fileName)),
+                await File.ReadAllLinesAsync(Path.Combine(rightNormalized, fileName)),
+                $"{leftName}-normalized/{fileName}",
+                $"{rightName}-normalized/{fileName}");
+            await File.WriteAllTextAsync(actualDiffPath, actualDiff);
+
+            string expectedDiffPath = Path.Combine(
+                repoRoot,
+                "tests",
+                "StaticGraphValidation.Tests",
+                "ExpectedDiffs",
+                testName,
+                Path.ChangeExtension(fileName, ".diff"));
+
+            if (Environment.GetEnvironmentVariable("UPDATE_EXPECTED_DIFFS") == "1")
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(expectedDiffPath)!);
+                await File.WriteAllTextAsync(expectedDiffPath, actualDiff);
+            }
+
+            Assert.True(
+                File.Exists(expectedDiffPath),
+                $"Missing expected diff '{expectedDiffPath}'. Run with UPDATE_EXPECTED_DIFFS=1 to create it.");
+            Assert.Equal(
+                NormalizeLineEndings(await File.ReadAllTextAsync(expectedDiffPath)),
+                NormalizeLineEndings(actualDiff));
+        }
+    }
+
+    private static string CreateDiff(
+        IReadOnlyList<string> left,
+        IReadOnlyList<string> right,
+        string leftName,
+        string rightName)
+    {
+        int[,] commonSuffixLengths = new int[left.Count + 1, right.Count + 1];
+        for (int leftIndex = left.Count - 1; leftIndex >= 0; leftIndex--)
+        {
+            for (int rightIndex = right.Count - 1; rightIndex >= 0; rightIndex--)
+            {
+                commonSuffixLengths[leftIndex, rightIndex] =
+                    StringComparer.Ordinal.Equals(left[leftIndex], right[rightIndex])
+                        ? commonSuffixLengths[leftIndex + 1, rightIndex + 1] + 1
+                        : Math.Max(
+                            commonSuffixLengths[leftIndex + 1, rightIndex],
+                            commonSuffixLengths[leftIndex, rightIndex + 1]);
+            }
+        }
+
+        List<DiffLine> lines = [];
+        int i = 0;
+        int j = 0;
+        bool hasDifferences = false;
+        while (i < left.Count || j < right.Count)
+        {
+            if (i < left.Count && j < right.Count && StringComparer.Ordinal.Equals(left[i], right[j]))
+            {
+                lines.Add(new DiffLine(' ', left[i]));
+                i++;
+                j++;
+            }
+            else if (j == right.Count ||
+                (i < left.Count && commonSuffixLengths[i + 1, j] >= commonSuffixLengths[i, j + 1]))
+            {
+                lines.Add(new DiffLine('-', left[i]));
+                i++;
+                hasDifferences = true;
+            }
+            else
+            {
+                lines.Add(new DiffLine('+', right[j]));
+                j++;
+                hasDifferences = true;
+            }
+        }
+
+        if (!hasDifferences)
+        {
+            return "";
+        }
+
+        StringBuilder builder = new();
+        builder.AppendLine($"--- {leftName}");
+        builder.AppendLine($"+++ {rightName}");
+        builder.AppendLine($"@@ -{DiffRange(left.Count)} +{DiffRange(right.Count)} @@");
+        foreach (DiffLine line in lines)
+        {
+            builder.Append(line.Prefix).AppendLine(line.Text);
+        }
+
+        return builder.ToString();
+    }
+
+    private static string DiffRange(int count) => count == 0 ? "0,0" : $"1,{count}";
+
+    private static string NormalizeLineEndings(string value) =>
+        value.Replace("\r\n", "\n", StringComparison.Ordinal);
 
     private static int NodeCount(JsonDocument capture) => capture.RootElement.GetProperty("Nodes").GetArrayLength();
 

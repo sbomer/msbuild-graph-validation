@@ -103,7 +103,7 @@ internal static class CommandLine
         }
 
         GraphCapture capture = GraphJson.Read(args[0]);
-        NormalizedCaptureWriter.Write(capture, options.OutputDirectory);
+        NormalizedCaptureWriter.Write(capture, options.OutputDirectory, options.RepoRoot);
         return 0;
     }
 

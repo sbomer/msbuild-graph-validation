@@ -1,0 +1,20 @@
+--- dynamic-normalized/edges.txt
++++ static-normalized/edges.txt
+@@ -1,3 +1,17 @@
++From=Project=child/child.csproj\|Target=GetTargetFrameworks\|GlobalProperties=|To=Project=child/child.csproj\|Target=Build\|GlobalProperties=TargetFramework=net8.0
++From=Project=child/child.csproj\|Target=GetTargetFrameworks\|GlobalProperties=|To=Project=child/child.csproj\|Target=Build\|GlobalProperties=TargetFramework=net9.0
++From=Project=child/child.csproj\|Target=GetTargetFrameworks\|GlobalProperties=|To=Project=child/child.csproj\|Target=GetCopyToOutputDirectoryItems\|GlobalProperties=TargetFramework=net8.0
++From=Project=child/child.csproj\|Target=GetTargetFrameworks\|GlobalProperties=|To=Project=child/child.csproj\|Target=GetCopyToOutputDirectoryItems\|GlobalProperties=TargetFramework=net9.0
++From=Project=child/child.csproj\|Target=GetTargetFrameworks\|GlobalProperties=|To=Project=child/child.csproj\|Target=GetNativeManifest\|GlobalProperties=TargetFramework=net8.0
++From=Project=child/child.csproj\|Target=GetTargetFrameworks\|GlobalProperties=|To=Project=child/child.csproj\|Target=GetNativeManifest\|GlobalProperties=TargetFramework=net9.0
++From=Project=child/child.csproj\|Target=GetTargetFrameworks\|GlobalProperties=|To=Project=child/child.csproj\|Target=GetTargetFrameworks\|GlobalProperties=TargetFramework=net8.0
++From=Project=child/child.csproj\|Target=GetTargetFrameworks\|GlobalProperties=|To=Project=child/child.csproj\|Target=GetTargetFrameworks\|GlobalProperties=TargetFramework=net9.0
+ From=Project=explicit/explicit.csproj\|Target=Build\|GlobalProperties=|To=Project=child/child.csproj\|Target=Build\|GlobalProperties=TargetFramework=net8.0
++From=Project=explicit/explicit.csproj\|Target=Build\|GlobalProperties=|To=Project=child/child.csproj\|Target=Build\|GlobalProperties=TargetFramework=net9.0
+ From=Project=explicit/explicit.csproj\|Target=Build\|GlobalProperties=|To=Project=child/child.csproj\|Target=GetCopyToOutputDirectoryItems\|GlobalProperties=TargetFramework=net8.0
++From=Project=explicit/explicit.csproj\|Target=Build\|GlobalProperties=|To=Project=child/child.csproj\|Target=GetCopyToOutputDirectoryItems\|GlobalProperties=TargetFramework=net9.0
+ From=Project=explicit/explicit.csproj\|Target=Build\|GlobalProperties=|To=Project=child/child.csproj\|Target=GetNativeManifest\|GlobalProperties=TargetFramework=net8.0
++From=Project=explicit/explicit.csproj\|Target=Build\|GlobalProperties=|To=Project=child/child.csproj\|Target=GetNativeManifest\|GlobalProperties=TargetFramework=net9.0
++From=Project=explicit/explicit.csproj\|Target=Build\|GlobalProperties=|To=Project=child/child.csproj\|Target=GetTargetFrameworks\|GlobalProperties=
++From=Project=explicit/explicit.csproj\|Target=Build\|GlobalProperties=|To=Project=child/child.csproj\|Target=GetTargetFrameworks\|GlobalProperties=TargetFramework=net8.0
++From=Project=explicit/explicit.csproj\|Target=Build\|GlobalProperties=|To=Project=child/child.csproj\|Target=GetTargetFrameworks\|GlobalProperties=TargetFramework=net9.0

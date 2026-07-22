@@ -18,6 +18,17 @@ Add MSBuild fixture projects under `tests/StaticGraphValidation.Tests/TestProjec
 dotnet test msbuild-graph-validation.slnx
 ```
 
+Comparison tests leave their captures, normalized `nodes.txt`/`edges.txt`, and
+generated diffs under `artifacts/tmp/tests/<test-name>/`. The generated
+`nodes.diff` and `edges.diff` must match the checked-in files under
+`tests/StaticGraphValidation.Tests/ExpectedDiffs/<test-name>/`.
+
+To intentionally update the expected diffs:
+
+```bash
+UPDATE_EXPECTED_DIFFS=1 dotnet test msbuild-graph-validation.slnx
+```
+
 ## Compare binlogs
 
 For simple A/B comparison, convert each binlog to a capture and compare the normalized graphs:
@@ -37,8 +48,8 @@ dotnet run --project src/StaticGraphValidation -- compare-binlogs --left path/to
 To produce stable text files for `diff -u`, normalize each capture to a directory:
 
 ```bash
-dotnet run --project src/StaticGraphValidation -- normalize artifacts/log/static-graph-validation/left.json --output-dir artifacts/log/static-graph-validation/left
-dotnet run --project src/StaticGraphValidation -- normalize artifacts/log/static-graph-validation/right.json --output-dir artifacts/log/static-graph-validation/right
+dotnet run --project src/StaticGraphValidation -- normalize artifacts/log/static-graph-validation/left.json --repo-root path/to/repo --output-dir artifacts/log/static-graph-validation/left
+dotnet run --project src/StaticGraphValidation -- normalize artifacts/log/static-graph-validation/right.json --repo-root path/to/repo --output-dir artifacts/log/static-graph-validation/right
 diff -u artifacts/log/static-graph-validation/left/nodes.txt artifacts/log/static-graph-validation/right/nodes.txt
 diff -u artifacts/log/static-graph-validation/left/edges.txt artifacts/log/static-graph-validation/right/edges.txt
 ```

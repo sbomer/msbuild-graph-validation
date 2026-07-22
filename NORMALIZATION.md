@@ -24,7 +24,8 @@ ProjectPath + Target + GlobalProperties
 
 ### ProjectPath
 
-The absolute project path is normalized to use `/` separators.
+The absolute project path is normalized to use `/` separators. Text output uses
+a path relative to `--repo-root` when that option is supplied.
 
 ### Target
 

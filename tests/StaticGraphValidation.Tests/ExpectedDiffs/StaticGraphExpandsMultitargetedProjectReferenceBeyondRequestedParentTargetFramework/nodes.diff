@@ -1,0 +1,22 @@
+--- dynamic-normalized/nodes.txt
++++ graph-build-normalized/nodes.txt
+@@ -1,13 +1,19 @@
+ Project: child/child.csproj
+   Globals: Restore=false
+     Target: GetTargetFrameworks
+   Globals: Restore=false;TargetFramework=net8.0
+     Target: Build
+     Target: GetCopyToOutputDirectoryItems
+     Target: GetNativeManifest
++    Target: GetTargetFrameworks
++  Globals: Restore=false;TargetFramework=net9.0
++    Target: Build
++    Target: GetCopyToOutputDirectoryItems
++    Target: GetNativeManifest
++    Target: GetTargetFrameworks
+ Project: parent/parent.csproj
+   Globals: Restore=false;TargetFramework=net8.0
+     Target: Build
+ Project: root.proj
+   Globals: Restore=false
+     Target: Build
