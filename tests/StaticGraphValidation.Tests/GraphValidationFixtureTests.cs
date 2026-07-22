@@ -135,6 +135,7 @@ public sealed class GraphValidationFixtureTests
         Assert.Contains("Left-only nodes: 0", comparison);
         Assert.Contains("Right-only nodes: 0", comparison);
 
+        // TargetA depends on TargetB, so the explicit TargetB request is a cache hit that must still be captured.
         Assert.Equal([TargetList("TargetA"), TargetList("TargetB")], RequestedTargetLists(dynamicJson, "referenced.proj"));
         Assert.Equal([TargetList("TargetA"), TargetList("TargetA", "TargetB"), TargetList("TargetB")], RequestedTargetLists(graphBuildJson, "referenced.proj"));
     }

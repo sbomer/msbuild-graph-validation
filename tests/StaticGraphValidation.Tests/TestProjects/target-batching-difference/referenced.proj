@@ -1,5 +1,5 @@
 <Project>
-  <Target Name="TargetA">
+  <Target Name="TargetA" DependsOnTargets="TargetB">
     <Message Importance="High" Text="TargetA" />
   </Target>
 
